@@ -48,7 +48,7 @@ Click ▶ to start (browsers require a gesture before audio).
 
 ### Controls
 
-- **speed** — `real-time + audio`, or slow it to `40000 / 4000 / 400 / 40` instructions per second, or
+- **speed** — `real-time + audio`, or slow it to `400000 / 40000 / 4000 / 400 / 40` instructions per second, or
   `⏸ single-step`. Below real-time, audio mutes and a **live disassembly trace** scrolls one
   instruction at a time (real mnemonics, including the illegal opcodes), with the current byte
   outlined in the grid.
