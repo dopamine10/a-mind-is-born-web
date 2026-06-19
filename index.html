@@ -177,9 +177,11 @@ for(const s of scopeDefs){ s.ctx=s.cv.getContext('2d'); s.w=s.cv.width; s.h=s.cv
 
 let actx=null,node=null,gain=null,m=null, rd=null;
 let sampleRate=44100, samplesPerFrame=735, realtime=true, paused=false, speedIps=0, stepAccum=0;
-let ring=new Float32Array(1<<16), rHead=0, rTail=0, frameBuf=null, voiceBufs=null;
-const SCOPE_N=4096, SCOPE_MASK=SCOPE_N-1, SCOPE_SPAN=1024;   // ring length, mask, samples drawn per trace
+let ring=new Float32Array(1<<16), rHead=0, rTail=0, frameBuf=null, voiceBufs=null, phaseFrame=null;
+const SCOPE_N=4096, SCOPE_MASK=SCOPE_N-1, SCOPE_SPAN=620;   // ring length, mask, samples drawn per trace (fewer cycles -> roomier, steadier)
 const scopeBufs=[0,1,2,3].map(()=>new Float32Array(SCOPE_N)); let scopeW=0;
+// per-voice oscillator phase (0..1), parallel to scopeBufs[1..3], for phase-locked triggering
+const scopePhase=[null, new Float32Array(SCOPE_N), new Float32Array(SCOPE_N), new Float32Array(SCOPE_N)];
 const everHit=new Uint8Array(256);
 const traceLines=[]; let curPC=-1;
 
@@ -202,12 +204,13 @@ let curLineEl=null;
 function scrollSrcTo(el){ srcEl.scrollTop = el.offsetTop - srcEl.clientHeight/2 + el.offsetHeight/2; }
 
 const ringLen=()=>(rHead-rTail+ring.length)%ring.length;
-function push(mix,vb,n){ for(let i=0;i<n;i++){
+function push(mix,vb,ph,n){ for(let i=0;i<n;i++){
   ring[rHead]=mix[i]; rHead=(rHead+1)%ring.length;
   scopeBufs[0][scopeW]=mix[i]; scopeBufs[1][scopeW]=vb[0][i]; scopeBufs[2][scopeW]=vb[1][i]; scopeBufs[3][scopeW]=vb[2][i];
+  scopePhase[1][scopeW]=ph[0][i]; scopePhase[2][scopeW]=ph[1][i]; scopePhase[3][scopeW]=ph[2][i];
   scopeW=(scopeW+1)&(SCOPE_N-1);
 } }
-function ensure(n){ let g=0; while(ringLen()<n && g++<512){ m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,samplesPerFrame); push(frameBuf,voiceBufs,samplesPerFrame); } }
+function ensure(n){ let g=0; while(ringLen()<n && g++<512){ m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,samplesPerFrame,phaseFrame); push(frameBuf,voiceBufs,phaseFrame,samplesPerFrame); } }
 
 // ---- emulator stepping for slow modes (mirrors C64.stepOne but captures disasm pre-exec) ----
 function zpCell(a){ if(a>=0&&a<=0xff) return a; if(a>=0x800&&a<=0x8ff) return a&0xff; return -1; }
@@ -233,6 +236,7 @@ function boot(){
   sampleRate=actx.sampleRate; samplesPerFrame=Math.round(sampleRate/60);
   frameBuf=new Float32Array(samplesPerFrame);
   voiceBufs=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
+  phaseFrame=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
   m=new C64(PRG,sampleRate); rd=m.rd.bind(m);
   const BUF=1024;
   node=actx.createScriptProcessor(BUF,0,1);
@@ -419,19 +423,29 @@ function drawSource(){
 function drawScope(){
   for(let k=0;k<scopeDefs.length;k++){
     const d=scopeDefs[k], ctx=d.ctx, w=d.w, h=d.h, buf=scopeBufs[k], mid=h/2, vg=(mid-3)*d.amp;
-    // pass 1: mean (trigger level, DC-tolerant) + extent (for hysteresis)
-    let sum=0, mn=1e9, mx=-1e9;
-    for(let j=0;j<SCOPE_N;j++){ const v=buf[(scopeW+j)&SCOPE_MASK]; sum+=v; if(v<mn)mn=v; if(v>mx)mx=v; }
-    const mean=sum/SCOPE_N, hyst=(mx-mn)*0.18;   // wide hysteresis -> lock to the main crossing, ignore filter ringing
-    // pass 2: latest rising mean-crossing -> anchor the window to END on it, so every frame
-    // shows the same phase (a true standing wave); draw the SPAN samples leading up to it
-    let trig=-1, armed=false;
-    for(let j=0;j<SCOPE_N;j++){
-      const v=buf[(scopeW+j)&SCOPE_MASK];
-      if(v<mean-hyst) armed=true;
-      else if(armed && v>=mean){ trig=j; armed=false; }
+    // --- trigger: find where the drawn window starts ---
+    let start, trig=-1;
+    const ph=scopePhase[k];
+    if(ph){
+      // voices: phase-LOCK to the oscillator. Anchor the window to END on the latest phase wrap
+      // (accumulator rolling 1->0): identical oscillator phase every frame, so the trace stands
+      // still horizontally and only moves vertically as the sound changes — even through pitch sweeps.
+      for(let j=1;j<SCOPE_N;j++){
+        if(ph[(scopeW+j)&SCOPE_MASK] < ph[(scopeW+j-1)&SCOPE_MASK]-0.5) trig=j;
+      }
+    } else {
+      // mix: no single oscillator -> trigger on the latest rising crossing of the signal mean
+      let sum=0, mn=1e9, mx=-1e9;
+      for(let j=0;j<SCOPE_N;j++){ const v=buf[(scopeW+j)&SCOPE_MASK]; sum+=v; if(v<mn)mn=v; if(v>mx)mx=v; }
+      const mean=sum/SCOPE_N, hyst=(mx-mn)*0.18, lim=SCOPE_N-SCOPE_SPAN;
+      let armed=false;
+      for(let j=0;j<lim;j++){
+        const v=buf[(scopeW+j)&SCOPE_MASK];
+        if(v<mean-hyst) armed=true;
+        else if(armed && v>=mean){ trig=j+SCOPE_SPAN; armed=false; }   // record as a window-end like the voices
+      }
     }
-    const start = trig>=SCOPE_SPAN ? trig-SCOPE_SPAN : SCOPE_N-SCOPE_SPAN;
+    start = trig>=SCOPE_SPAN ? trig-SCOPE_SPAN : SCOPE_N-SCOPE_SPAN;
     // clear to a clean frame each sweep — a single crisp standing trace, no afterglow smear
     ctx.clearRect(0,0,w,h);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1;

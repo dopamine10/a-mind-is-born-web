@@ -163,13 +163,17 @@ export class SID {
   generate(buf, n){
     for(let i=0;i<n;i++) buf[i]=this.sample();
   }
-  // Like generate(), but also captures each voice's raw (post-envelope, pre-filter)
-  // signal into vb = [v0, v1, v2], so the UI can scope the three voices individually.
-  generateSplit(mix, vb, n){
+  // Like generate(), but also captures each voice's signal into vb = [v0, v1, v2] so the UI can
+  // scope the three voices individually, plus each voice's oscillator phase (0..1) into ph =
+  // [p0, p1, p2] so the scope can phase-lock to it (a stationary trace) instead of guessing from
+  // the waveform. ph is optional.
+  generateSplit(mix, vb, n, ph){
     const a=vb[0], b=vb[1], c=vb[2];
+    const p0=ph&&ph[0], p1=ph&&ph[1], p2=ph&&ph[2];
     for(let i=0;i<n;i++){
       mix[i]=this.sample();
       a[i]=this._vout[0]; b[i]=this._vout[1]; c[i]=this._vout[2];
+      if(ph){ p0[i]=this.v[0].acc/0x1000000; p1[i]=this.v[1].acc/0x1000000; p2[i]=this.v[2].acc/0x1000000; }
     }
   }
 }

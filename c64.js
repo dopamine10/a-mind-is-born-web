@@ -150,8 +150,9 @@ export class C64 {
 
   // Generate `n` audio samples (mono, -1..1) for the current SID state.
   renderAudio(buf, n){ this.sid.generate(buf, n); }
-  // Fill the combined mix plus each voice's individual waveform (vb = [v0,v1,v2]).
-  renderAudioSplit(mix, vb, n){ this.sid.generateSplit(mix, vb, n); }
+  // Fill the combined mix, each voice's individual waveform (vb=[v0,v1,v2]), and (optionally)
+  // each voice's oscillator phase (ph=[p0,p1,p2]) so the scopes can phase-lock to it.
+  renderAudioSplit(mix, vb, n, ph){ this.sid.generateSplit(mix, vb, n, ph); }
 
   // ---- VIC-II extended-colour text rendering into an ImageData-sized RGBA buffer ----
   // 320x200 inner; we render the 40x25 char matrix.
