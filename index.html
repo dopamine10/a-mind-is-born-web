@@ -361,24 +361,25 @@ function hiTrace(line){
   const lead=line.match(/^(\s*)(.*)$/);     // marker line: keep indentation, colour the text
   return `${lead[1]}<span class="t-mk">${escHtml(lead[2])}</span>`;
 }
+function renderTrace(lines){   // last line = current instruction (highlighted)
+  traceEl.innerHTML = lines.map((l,i)=> i===lines.length-1 ? `<span class="cur">${hiTrace(l)}</span>` : hiTrace(l)).join('\n');
+}
+const MARK=[null,'—— IRQ enter ——','rti  (irq exit)','jsr $e544 (clear screen)','jmp ($fffc)  → restart'];
 function drawTrace(){
   if(realtime){
-    // sample the instruction at the current PC so there's something live to read
-    const c=m.cpu, a=c.pc;
-    let head;
-    if(a<=0xff || (a>=0x800&&a<=0x8ff)){
-      const d=disasm(rd,a), b=d.bytes.map(hx2).join(' ').padEnd(8);
-      head=`<span class="cur">${hiTrace(`$${hx4(a)}: ${b} ${d.text}`)}</span>`;
-    } else head='<span class="t-dim">(running at full speed — pick a slow speed to read along)</span>';
-    traceEl.innerHTML = head+'\n\n'+
-      '<span class="t-dim">   the trace scrolls thousands of\n   instructions per second here in\n   real time. slow it down to step\n   through the code line by line.</span>';
+    // real-time is driven by runFrame() inside the audio callback, so we read the CPU's own
+    // recent-execution ring and show the same scrolling instruction stream as the slow modes.
+    if(!m.totalCycles){ traceEl.innerHTML='<span class="t-dim">starting…</span>'; return; }
+    const N=m.traceN, W=m.traceW, A=m.traceAddr, K=m.traceKind, lines=[];
+    for(let i=15;i>=1;i--){
+      const idx=(W-i+N)&(N-1), k=K[idx], a=A[idx];
+      if(k===0){ const d=disasm(rd,a), b=d.bytes.map(hx2).join(' ').padEnd(8); lines.push(`$${hx4(a)}: ${b} ${d.text}`); }
+      else lines.push('         '+MARK[k]);
+    }
+    renderTrace(lines);
     return;
   }
-  const last=traceLines.slice(-15);
-  traceEl.innerHTML = last.map((l,i)=>{
-    const inner=hiTrace(l);
-    return i===last.length-1 ? `<span class="cur">${inner}</span>` : inner;
-  }).join('\n');
+  renderTrace(traceLines.slice(-15));
 }
 
 // Light the source the same way the hex grid lights its cells: electric-blue flare on

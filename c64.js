@@ -29,6 +29,9 @@ export class C64 {
     this.cyclesToIRQ = IRQ_PERIOD;
     this.inIRQ = false;
     this.heat = new Float32Array(256);   // per-byte execution heat (1=just executed, decays in UI)
+    // ring of recent execution events, for the real-time disassembly trace (slow modes capture their own)
+    this.traceN = 64; this.traceAddr = new Uint16Array(this.traceN);
+    this.traceKind = new Uint8Array(this.traceN); this.traceW = 0;
     this.init();
   }
 
@@ -99,6 +102,9 @@ export class C64 {
     return -1;
   }
 
+  // record one execution event into the recent-trace ring (kind: 0 op, 1 irq, 2 rti, 3 clrscr, 4 reset)
+  logTrace(addr,kind){ const w=this.traceW; this.traceAddr[w]=addr&0xffff; this.traceKind[w]=kind; this.traceW=(w+1)&(this.traceN-1); }
+
   // One atomic step: a single instruction, an IRQ entry, an IRQ exit, or a ROM trap.
   // Returns a small record describing what happened, for the heat map / trace view.
   stepOne(){
@@ -110,25 +116,28 @@ export class C64 {
       c.push(c.a); c.push(c.x); c.push(c.y);              // KERNAL $FF48 saves A,X,Y
       c.pc = this.rd(0x0314)|(this.rd(0x0315)<<8);        // JMP ($0314)
       this.inIRQ=true;
+      this.logTrace(0,1);
       return {addr:-1, kind:'irq', cell:-1};
     }
     const pc=c.pc;
     if(pc===0xe544){ // KERNAL clear-screen, called once during init
       this.kernalClearScreen();
       const lo=c.pop(),hi=c.pop(); c.pc=((lo|(hi<<8))+1)&0xffff;
-      this.totalCycles+=12; this.cyclesToIRQ-=12; return {addr:pc,kind:'kernal',cell:-1};
+      this.totalCycles+=12; this.cyclesToIRQ-=12; this.logTrace(pc,3); return {addr:pc,kind:'kernal',cell:-1};
     }
     if(pc===0xea7e){ // KERNAL IRQ exit: restore Y,X,A then RTI
       c.y=c.pop(); c.x=c.pop(); c.a=c.pop();
       c.p=(c.pop()&~0x10)|0x20; const lo=c.pop(),hi=c.pop(); c.pc=lo|(hi<<8);
       this.inIRQ=false; this.totalCycles+=6; this.cyclesToIRQ-=6;
+      this.logTrace(pc,2);
       return {addr:pc,kind:'rti',cell:-1};
     }
-    if(pc===0xfce2){ this.init(); return {addr:pc,kind:'reset',cell:-1}; } // finale -> restart
+    if(pc===0xfce2){ this.init(); this.logTrace(pc,4); return {addr:pc,kind:'reset',cell:-1}; } // finale -> restart
     const used=c.step();
     this.totalCycles+=used; this.cyclesToIRQ-=used;
     const cell=this.addrToCell(pc);
     if(cell>=0) this.heat[cell]=1;
+    this.logTrace(pc,0);
     return {addr:pc, kind:'op', cell, used};
   }
 
