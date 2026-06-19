@@ -207,6 +207,9 @@ let curLineEl=null;
   srcEl.appendChild(frag);
 })();
 function scrollSrcTo(el){ srcEl.scrollTop = el.offsetTop - srcEl.clientHeight/2 + el.offsetHeight/2; }
+// keep the executing line on screen: jump (re-centre) only when it has scrolled out of view
+function ensureSrcVisible(el){ const t=el.offsetTop, v=srcEl.scrollTop, h=srcEl.clientHeight;
+  if(t < v+10 || t+el.offsetHeight > v+h-10) scrollSrcTo(el); }
 
 const ringLen=()=>(rHead-rTail+ring.length)%ring.length;
 function push(mix,vb,n){ for(let i=0;i<n;i++){
@@ -411,11 +414,16 @@ function drawSource(){
       el.style.background=''; el.style.color=''; el.style.textShadow='';                         // data / never run
     }
   }
-  const want = (!realtime && curPC>=0) ? cellLine[curPC] : null;
+  // follow execution: scroll the listing to the line at the current PC, in every mode
+  const pc=zpCell(m.cpu.pc);
+  const want = pc>=0 ? cellLine[pc] : null;
   if(want!==curLineEl){
     if(curLineEl) curLineEl.classList.remove('cur');
     curLineEl=want;
-    if(want){ want.classList.add('cur'); scrollSrcTo(want); }
+    if(want){
+      if(!realtime){ want.classList.add('cur'); scrollSrcTo(want); }   // slow/step: yellow cursor, centred
+      else ensureSrcVisible(want);                                      // play: jump to it when it leaves view
+    }
   }
 }
 
