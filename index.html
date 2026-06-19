@@ -8,7 +8,24 @@
   :root{ --bg:#0a0a0f; --panel:#0e0e16; --line:#1d1d28; --fg:#c8c8d0; --dim:#6a6a78; --accent:#88e089; --hot:#ffe66d; }
   *{ box-sizing:border-box; }
   body{ margin:0; background:var(--bg); color:var(--fg); font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; }
-  .wrap{ max-width:1000px; margin:0 auto; padding:24px 18px 60px; }
+  .wrap{ max-width:1000px; flex:1 1 1000px; min-width:0; padding:0; }
+  /* --- source-code companion rail (left of the screen) --- */
+  .app{ display:flex; gap:20px; justify-content:center; align-items:flex-start; max-width:1380px; margin:0 auto; padding:24px 18px 60px; }
+  .source{ flex:0 0 300px; width:300px; position:sticky; top:18px; align-self:flex-start; max-height:calc(100vh - 36px);
+           display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:12px 6px 10px 12px; }
+  .source h2{ font-size:11px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin:0 0 8px; }
+  #src{ position:relative; overflow-y:auto; overflow-x:hidden; flex:1 1 auto; padding-right:6px; scrollbar-width:thin; scrollbar-color:#23232f transparent; }
+  #src::-webkit-scrollbar{ width:8px; } #src::-webkit-scrollbar-thumb{ background:#23232f; border-radius:4px; }
+  .srcline{ white-space:pre; font-size:11.5px; line-height:1.55; padding:0 6px; border-left:2px solid transparent; border-radius:2px; color:var(--fg); }
+  .srcline.data, .srcline.equ{ color:var(--dim); }
+  .srcline.label{ color:var(--accent); }
+  .srcline.gap{ height:7px; padding:0; }
+  .srcline.cur{ border-left-color:var(--hot); }
+  .srcfoot{ color:var(--dim); font-size:10.5px; margin-top:9px; padding:0 6px; line-height:1.45; }
+  @media(max-width:1180px){
+    .app{ flex-direction:column; align-items:center; }
+    .source{ order:2; position:static; width:100%; max-width:1000px; flex:none; max-height:340px; }
+  }
   h1{ font-size:19px; font-weight:600; margin:0 0 1px; letter-spacing:.3px; }
   .sub{ color:var(--dim); margin:0 0 18px; font-size:12.5px; }
   .sub a{ color:var(--accent); text-decoration:none; }
@@ -42,6 +59,13 @@
 </style>
 </head>
 <body>
+<div class="app">
+<aside class="source">
+  <h2>Source · zero-page program</h2>
+  <div id="src"></div>
+  <div class="srcfoot">The original 6502 source, comments stripped. Each line flares as its byte
+     executes — slow the speed and the <b style="color:var(--hot)">yellow cursor</b> follows the CPU.</div>
+</aside>
 <div class="wrap">
   <h1>A&nbsp;Mind&nbsp;Is&nbsp;Born — live</h1>
   <p class="sub">The exact 256 bytes executing, with every byte lit as the CPU runs it.
@@ -92,11 +116,13 @@
     </div>
   </div>
 </div>
+</div>
 
 <script type="module">
 import { PRG } from './prg.js';
 import { C64 } from './c64.js';
 import { disasm, hx2, hx4 } from './disasm.js';
+import { SRC } from './source.js';
 
 const $=id=>document.getElementById(id);
 const screen=$('screen'), sctx=screen.getContext('2d'), img=sctx.createImageData(320,200);
@@ -110,6 +136,24 @@ let ring=new Float32Array(1<<16), rHead=0, rTail=0, frameBuf=null;
 const scopeBuf=new Float32Array(1024); let scopeW=0;
 const everHit=new Uint8Array(256);
 const traceLines=[]; let curPC=-1;
+
+// ---- source listing (left rail): driven by the SAME heat array as the hex grid ----
+const srcEl=$('src');
+const cellLine=new Array(256).fill(null);   // zero-page cell -> its source line element
+const litLines=[];                           // line elements that correspond to a byte
+let curLineEl=null;
+(function buildSource(){
+  const frag=document.createDocumentFragment();
+  for(const e of SRC){
+    const div=document.createElement('div');
+    div.className='srcline '+e.k;
+    if(e.k!=='gap') div.textContent=e.t;
+    if(e.c!=null && cellLine[e.c]==null){ cellLine[e.c]=div; div._cell=e.c; litLines.push(div); }
+    frag.appendChild(div);
+  }
+  srcEl.appendChild(frag);
+})();
+function scrollSrcTo(el){ srcEl.scrollTop = el.offsetTop - srcEl.clientHeight/2 + el.offsetHeight/2; }
 
 const ringLen=()=>(rHead-rTail+ring.length)%ring.length;
 function push(buf,n){ for(let i=0;i<n;i++){ ring[rHead]=buf[i]; rHead=(rHead+1)%ring.length; scopeBuf[scopeW]=buf[i]; scopeW=(scopeW+1)&1023; } }
@@ -151,7 +195,8 @@ function boot(){
 }
 
 overlay.addEventListener('click', async ()=>{ if(!m) boot(); await actx.resume(); overlay.classList.add('hidden'); });
-$('restart').addEventListener('click', ()=>{ if(m){ m.init(); rHead=rTail=0; everHit.fill(0); traceLines.length=0; } });
+$('restart').addEventListener('click', ()=>{ if(m){ m.init(); rHead=rTail=0; everHit.fill(0); traceLines.length=0;
+  if(curLineEl){ curLineEl.classList.remove('cur'); curLineEl=null; } } });
 $('vol').addEventListener('input', ()=>{ if(gain) gain.gain.value=$('vol').value/100; });
 $('speed').addEventListener('change', e=>{
   const v=e.target.value;
@@ -178,6 +223,7 @@ function draw(){
   drawGrid();
   drawTrace();
   drawScope();
+  drawSource();
 
   const c=m.cpu;
   $('rA').textContent=hx2(c.a); $('rX').textContent=hx2(c.x); $('rY').textContent=hx2(c.y);
@@ -235,6 +281,33 @@ function drawTrace(){
     return cls?`<span class="${cls}">${l}</span>`:l;
   }).join('\n');
   traceEl.innerHTML=html;
+}
+
+// Light the source the same way the hex grid lights its cells: green flare on execute,
+// phosphor fade, faint blue resting tint for code that has ever run, plus the yellow
+// PC cursor in slow / single-step modes (mirrors the grid's outlined cell).
+function drawSource(){
+  const heat=m.heat;
+  for(const el of litLines){
+    const c=el._cell, h=Math.min(1,heat[c]), hot=h>0.02, ever=everHit[c];
+    const key = hot ? (h*40|0) : (ever?-1:-2);    // quantise: only touch the DOM on a real change
+    if(el._k===key) continue;
+    el._k=key;
+    if(hot){
+      el.style.background=`rgba(120,224,137,${(0.12+h*0.34).toFixed(3)})`;
+      el.style.color=`rgb(${150+(h*55|0)},${205+(h*50|0)},${150+(h*55|0)})`;
+    } else if(ever){
+      el.style.background='rgba(116,150,224,0.07)'; el.style.color='';   // cold code
+    } else {
+      el.style.background=''; el.style.color='';                        // data / never run
+    }
+  }
+  const want = (!realtime && curPC>=0) ? cellLine[curPC] : null;
+  if(want!==curLineEl){
+    if(curLineEl) curLineEl.classList.remove('cur');
+    curLineEl=want;
+    if(want){ want.classList.add('cur'); scrollSrcTo(want); }
+  }
 }
 
 function drawScope(){
