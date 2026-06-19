@@ -130,10 +130,10 @@
         <button class="ctl" id="fs" type="button" title="Fullscreen video" aria-label="Fullscreen video">⛶ fullscreen</button>
       </div>
       <div class="scopes">
-        <div class="scope-row"><span class="scope-lbl" style="color:#88e089">mix · audio out</span><canvas id="scope" width="640" height="118"></canvas></div>
-        <div class="scope-row"><span class="scope-lbl" style="color:#ffb454">voice 1 · kick + bass</span><canvas id="scope1" width="640" height="96"></canvas></div>
-        <div class="scope-row"><span class="scope-lbl" style="color:#6ad0ff">voice 2 · melody</span><canvas id="scope2" width="640" height="96"></canvas></div>
-        <div class="scope-row"><span class="scope-lbl" style="color:#c08cff">voice 3 · drone</span><canvas id="scope3" width="640" height="96"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#88e089">mix · audio out</span><canvas id="scope" width="640" height="140"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#ffb454">voice 1 · kick + bass</span><canvas id="scope1" width="640" height="118"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#6ad0ff">voice 2 · melody</span><canvas id="scope2" width="640" height="118"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#c08cff">voice 3 · drone</span><canvas id="scope3" width="640" height="118"></canvas></div>
       </div>
     </div>
 
@@ -167,11 +167,11 @@ const screen=$('screen'), sctx=screen.getContext('2d'), img=sctx.createImageData
 const grid=$('grid'), gctx=grid.getContext('2d');
 const overlay=$('overlay'), screenFrame=screen.closest('.screen-frame'), traceEl=$('trace');
 // oscilloscopes: index 0 = combined mix, 1..3 = the three SID voices (drawn stacked)
-const scopeDefs=[
-  {cv:$('scope'),  color:'#88e089', amp:0.80},  // mix (audio out)
-  {cv:$('scope1'), color:'#ffb454', amp:0.68},  // voice 1 · kick + bass (headroom for the kick peak)
-  {cv:$('scope2'), color:'#6ad0ff', amp:0.72},  // voice 2 · melody
-  {cv:$('scope3'), color:'#c08cff', amp:0.72},  // voice 3 · drone
+const scopeDefs=[   // amp = target fill: each trace auto-fits to this fraction of the half-height
+  {cv:$('scope'),  color:'#88e089', amp:0.82},  // mix (audio out)
+  {cv:$('scope1'), color:'#ffb454', amp:0.80},  // voice 1 · kick + bass
+  {cv:$('scope2'), color:'#6ad0ff', amp:0.80},  // voice 2 · melody
+  {cv:$('scope3'), color:'#c08cff', amp:0.80},  // voice 3 · drone
 ];
 for(const s of scopeDefs){ s.ctx=s.cv.getContext('2d'); s.w=s.cv.width; s.h=s.cv.height; }
 
@@ -422,7 +422,7 @@ function drawSource(){
 // every frame => a stable, non-flickering standing wave.
 function drawScope(){
   for(let k=0;k<scopeDefs.length;k++){
-    const d=scopeDefs[k], ctx=d.ctx, w=d.w, h=d.h, buf=scopeBufs[k], mid=h/2, vg=(mid-3)*d.amp;
+    const d=scopeDefs[k], ctx=d.ctx, w=d.w, h=d.h, buf=scopeBufs[k], mid=h/2;
     // --- trigger: find where the drawn window starts ---
     let start, trig=-1;
     const ph=scopePhase[k];
@@ -446,13 +446,22 @@ function drawScope(){
       }
     }
     start = trig>=SCOPE_SPAN ? trig-SCOPE_SPAN : SCOPE_N-SCOPE_SPAN;
+    // centre the trace on its own mean and auto-fit it to the row, so it fills ~d.amp of the
+    // half-height without ever clamping. Fast attack / slow release keeps it from pumping, and
+    // a silence floor lets an idle voice rest as a flat line instead of amplifying noise.
+    let s2=0, lo=1e9, hi=-1e9;
+    for(let j=0;j<SCOPE_SPAN;j++){ const v=buf[(scopeW+start+j)&SCOPE_MASK]; s2+=v; if(v<lo)lo=v; if(v>hi)hi=v; }
+    const m2=s2/SCOPE_SPAN, dev=Math.max(hi-m2, m2-lo);
+    let tg = dev>0.004 ? d.amp/dev : 0; if(tg>10) tg=10;
+    d.gain = (d.gain===undefined) ? tg : d.gain + (tg - d.gain)*(tg < d.gain ? 0.40 : 0.08);
+    const vg=(mid-3)*d.gain;
     // clear to a clean frame each sweep — a single crisp standing trace, no afterglow smear
     ctx.clearRect(0,0,w,h);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(w,mid); ctx.stroke();   // zero line
+    ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(w,mid); ctx.stroke();   // centre line
     ctx.strokeStyle=d.color; ctx.lineWidth=1; ctx.lineJoin='round'; ctx.beginPath();
     for(let j=0;j<SCOPE_SPAN;j++){
-      let y=mid - buf[(scopeW+start+j)&SCOPE_MASK]*vg;
+      let y=mid - (buf[(scopeW+start+j)&SCOPE_MASK]-m2)*vg;
       if(y<0.5)y=0.5; else if(y>h-0.5)y=h-0.5;
       const x=j*w/SCOPE_SPAN;
       j?ctx.lineTo(x,y):ctx.moveTo(x,y);
