@@ -98,10 +98,8 @@
             <option value="4000">slow · 4000 ip/s</option>
             <option value="400">crawl · 400 ip/s</option>
             <option value="40">creep · 40 ip/s</option>
-            <option value="0">⏸ single-step</option>
           </select>
         </label>
-        <button class="ctl" id="step" disabled>step ▸</button>
         <button class="ctl" id="restart">⟲ restart</button>
         <label>vol <input type="range" id="vol" min="0" max="100" value="62"></label>
         <button class="ctl" id="fs" type="button" title="Fullscreen video" aria-label="Fullscreen video">⛶ fullscreen</button>
@@ -193,7 +191,7 @@ function push(mix,vb,n){ for(let i=0;i<n;i++){
 } }
 function ensure(n){ let g=0; while(ringLen()<n && g++<512){ m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,samplesPerFrame); push(frameBuf,voiceBufs,samplesPerFrame); } }
 
-// ---- emulator stepping for slow/step modes (mirrors C64.stepOne but captures disasm pre-exec) ----
+// ---- emulator stepping for slow modes (mirrors C64.stepOne but captures disasm pre-exec) ----
 function zpCell(a){ if(a>=0&&a<=0xff) return a; if(a>=0x800&&a<=0x8ff) return a&0xff; return -1; }
 function doStep(){
   const c=m.cpu; let line;
@@ -235,12 +233,11 @@ $('restart').addEventListener('click', ()=>{ if(m){ m.init(); rHead=rTail=0; eve
   if(curLineEl){ curLineEl.classList.remove('cur'); curLineEl=null; } } });
 $('vol').addEventListener('input', ()=>{ if(gain) gain.gain.value=$('vol').value/100; });
 function applySpeed(v){
-  if(v==='rt'){ realtime=true; rHead=rTail=0; $('step').disabled=true; if(actx) actx.resume(); }
-  else { realtime=false; speedIps=+v; stepAccum=0; $('step').disabled=false; }
+  if(v==='rt'){ realtime=true; rHead=rTail=0; if(actx) actx.resume(); }
+  else { realtime=false; speedIps=+v; stepAccum=0; }
 }
 $('speed').addEventListener('change', e=>applySpeed(e.target.value));
 applySpeed($('speed').value);   // sync state to whatever the browser restored (avoids a silent rt/slow mismatch on reload)
-$('step').addEventListener('click', ()=>{ if(m && !realtime) doStep(); });
 
 // ---- fullscreen the video frame only (canvas + its black letterbox, nothing else) ----
 const screenFrame=screen.closest('.screen-frame'), fsBtn=$('fs');
@@ -305,7 +302,7 @@ function drawGrid(){
     gctx.textAlign='center';
     gctx.fillText(hx2(v),x+cw/2,y+ch/2+0.5);
   }
-  // current PC outline (slow / step modes)
+  // current PC outline (slow modes)
   if(!realtime && curPC>=0){
     const r=curPC>>4,c=curPC&15;
     gctx.strokeStyle='#ffe66d'; gctx.lineWidth=1.5;
@@ -334,7 +331,7 @@ function drawTrace(){
 
 // Light the source the same way the hex grid lights its cells: green flare on execute,
 // phosphor fade, faint blue resting tint for code that has ever run, plus the yellow
-// PC cursor in slow / single-step modes (mirrors the grid's outlined cell).
+// PC cursor in slow modes (mirrors the grid's outlined cell).
 function drawSource(){
   const heat=m.heat;
   for(const el of litLines){
