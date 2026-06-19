@@ -83,7 +83,7 @@
       </div>
       <div class="controls">
         <label>speed
-          <select id="speed">
+          <select id="speed" autocomplete="off">
             <option value="rt">real-time + audio</option>
             <option value="400000">turbo · 400000 ip/s</option>
             <option value="40000">fast · 40000 ip/s</option>
@@ -225,11 +225,12 @@ overlay.addEventListener('click', async ()=>{ if(!m) boot(); await actx.resume()
 $('restart').addEventListener('click', ()=>{ if(m){ m.init(); rHead=rTail=0; everHit.fill(0); traceLines.length=0;
   if(curLineEl){ curLineEl.classList.remove('cur'); curLineEl=null; } } });
 $('vol').addEventListener('input', ()=>{ if(gain) gain.gain.value=$('vol').value/100; });
-$('speed').addEventListener('change', e=>{
-  const v=e.target.value;
+function applySpeed(v){
   if(v==='rt'){ realtime=true; rHead=rTail=0; $('step').disabled=true; if(actx) actx.resume(); }
   else { realtime=false; speedIps=+v; stepAccum=0; $('step').disabled=false; }
-});
+}
+$('speed').addEventListener('change', e=>applySpeed(e.target.value));
+applySpeed($('speed').value);   // sync state to whatever the browser restored (avoids a silent rt/slow mismatch on reload)
 $('step').addEventListener('click', ()=>{ if(m && !realtime) doStep(); });
 
 // ---- 60 fps render of video + grid + trace + scope ----
