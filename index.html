@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Mind Is Born — 256 bytes, live</title>
+<style>
+  :root{ --bg:#0a0a0f; --panel:#0e0e16; --line:#1d1d28; --fg:#c8c8d0; --dim:#6a6a78; --accent:#88e089; --hot:#ffe66d; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--fg); font:13px/1.5 ui-monospace,Menlo,Consolas,monospace; }
+  .wrap{ max-width:1000px; margin:0 auto; padding:24px 18px 60px; }
+  h1{ font-size:19px; font-weight:600; margin:0 0 1px; letter-spacing:.3px; }
+  .sub{ color:var(--dim); margin:0 0 18px; font-size:12.5px; }
+  .sub a{ color:var(--accent); text-decoration:none; }
+  .grid2{ display:grid; grid-template-columns:1.05fr .95fr; gap:18px; align-items:start; }
+  @media(max-width:820px){ .grid2{ grid-template-columns:1fr; } }
+  .screen-frame{ position:relative; background:#000; border:1px solid var(--line); border-radius:6px; overflow:hidden; aspect-ratio:320/200; }
+  canvas#screen{ width:100%; height:100%; image-rendering:pixelated; display:block; }
+  .overlay{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(4,4,8,.72); cursor:pointer; transition:opacity .3s; }
+  .overlay.hidden{ opacity:0; pointer-events:none; }
+  .play .btn{ font-size:30px; color:var(--accent); border:1px solid var(--accent); border-radius:50%; width:66px; height:66px; line-height:62px; margin:0 auto 10px; text-align:center; }
+  .play small{ color:var(--dim); display:block; text-align:center; }
+  .controls{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0 4px; }
+  select,button.ctl{ background:#14141c; color:var(--fg); border:1px solid #2a2a38; border-radius:5px; padding:6px 11px; cursor:pointer; font:inherit; }
+  button.ctl:hover,select:hover{ border-color:var(--accent); color:var(--accent); }
+  button.ctl:disabled{ opacity:.35; cursor:default; color:var(--fg); border-color:#2a2a38; }
+  label{ color:var(--dim); display:flex; align-items:center; gap:6px; }
+  input[type=range]{ accent-color:var(--accent); width:90px; }
+  .panel{ background:var(--panel); border:1px solid var(--line); border-radius:6px; padding:12px 13px; }
+  .panel h2{ font-size:11px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.6px; margin:0 0 9px; }
+  canvas#grid{ width:100%; display:block; }
+  .legend{ color:var(--dim); font-size:11px; margin-top:8px; }
+  .legend b{ color:var(--accent); font-weight:600; }
+  #trace{ white-space:pre; font-size:12px; line-height:1.45; height:232px; overflow:hidden; color:#9a9aa8; }
+  #trace .cur{ color:var(--hot); }
+  #trace .mark{ color:var(--accent); }
+  .regs{ display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; color:var(--dim); font-size:12px; }
+  .regs b{ color:var(--fg); font-weight:600; }
+  .scope-frame{ background:#06060b; border:1px solid var(--line); border-radius:6px; margin-top:16px; }
+  canvas#scope{ width:100%; height:70px; display:block; }
+  .foot{ color:var(--dim); font-size:12px; margin-top:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>A&nbsp;Mind&nbsp;Is&nbsp;Born — live</h1>
+  <p class="sub">The exact 256 bytes executing, with every byte lit as the CPU runs it.
+     <a href="https://linusakesson.net/scene/a-mind-is-born/" target="_blank" rel="noopener">original ↗</a></p>
+
+  <div class="grid2">
+    <div>
+      <div class="screen-frame">
+        <canvas id="screen" width="320" height="200"></canvas>
+        <div class="overlay" id="overlay"><div class="play"><div class="btn">▶</div><small>click to run · audio on</small></div></div>
+      </div>
+      <div class="controls">
+        <label>speed
+          <select id="speed">
+            <option value="rt">real-time + audio</option>
+            <option value="4000">slow · 4000 ip/s</option>
+            <option value="400">slow · 400 ip/s</option>
+            <option value="40">crawl · 40 ip/s</option>
+            <option value="0">⏸ single-step</option>
+          </select>
+        </label>
+        <button class="ctl" id="step" disabled>step ▸</button>
+        <button class="ctl" id="restart">⟲ restart</button>
+        <label>vol <input type="range" id="vol" min="0" max="100" value="62"></label>
+      </div>
+      <div class="scope-frame"><canvas id="scope" width="640" height="70"></canvas></div>
+      <p class="foot">The colours of the flowing visuals are SID register bytes copied straight into
+         the VIC chip — same numbers heard and seen. Switch to a slow speed to read the code as it runs.</p>
+    </div>
+
+    <div>
+      <div class="panel">
+        <h2>Zero page $00–$FF · the running program</h2>
+        <canvas id="grid" width="466" height="470"></canvas>
+        <div class="legend">Each cell is one byte. It flares <b>bright</b> the instant it executes, then
+          fades (phosphor). Watch the tight main-loop glow, the interrupt handler pulse, and the data
+          tables stay dark. The loader copies the program here, so the code even rewrites itself live.</div>
+      </div>
+      <div class="panel" style="margin-top:14px;">
+        <h2>Live disassembly trace</h2>
+        <div id="trace"></div>
+        <div class="regs">
+          <span>A=<b id="rA">00</b></span><span>X=<b id="rX">00</b></span><span>Y=<b id="rY">00</b></span>
+          <span>SP=<b id="rS">00</b></span><span>PC=<b id="rPC">0000</b></span><span><b id="rF">........</b></span>
+          <span>bar <b id="bar">0</b>/64</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import { PRG } from './prg.js';
+import { C64 } from './c64.js';
+import { disasm, hx2, hx4 } from './disasm.js';
+
+const $=id=>document.getElementById(id);
+const screen=$('screen'), sctx=screen.getContext('2d'), img=sctx.createImageData(320,200);
+const grid=$('grid'), gctx=grid.getContext('2d');
+const scope=$('scope'), pctx=scope.getContext('2d');
+const overlay=$('overlay'), traceEl=$('trace');
+
+let actx=null,node=null,gain=null,m=null, rd=null;
+let sampleRate=44100, samplesPerFrame=735, realtime=true, speedIps=0, stepAccum=0;
+let ring=new Float32Array(1<<16), rHead=0, rTail=0, frameBuf=null;
+const scopeBuf=new Float32Array(1024); let scopeW=0;
+const everHit=new Uint8Array(256);
+const traceLines=[]; let curPC=-1;
+
+const ringLen=()=>(rHead-rTail+ring.length)%ring.length;
+function push(buf,n){ for(let i=0;i<n;i++){ ring[rHead]=buf[i]; rHead=(rHead+1)%ring.length; scopeBuf[scopeW]=buf[i]; scopeW=(scopeW+1)&1023; } }
+function ensure(n){ let g=0; while(ringLen()<n && g++<512){ m.runFrame(); m.renderAudio(frameBuf,samplesPerFrame); push(frameBuf,samplesPerFrame); } }
+
+// ---- emulator stepping for slow/step modes (mirrors C64.stepOne but captures disasm pre-exec) ----
+function zpCell(a){ if(a>=0&&a<=0xff) return a; if(a>=0x800&&a<=0x8ff) return a&0xff; return -1; }
+function doStep(){
+  const c=m.cpu; let line;
+  if(!m.inIRQ && m.cyclesToIRQ<=0 && !(c.p&0x04)) line={mark:'—— IRQ enter ——'};
+  else if(c.pc===0xea7e) line={mark:'rti  (irq exit)'};
+  else if(c.pc===0xe544) line={mark:'jsr $e544 (clear screen)'};
+  else if(c.pc===0xfce2) line={mark:'jmp ($fffc)  → restart'};
+  else { const d=disasm(rd,c.pc); line={addr:c.pc,bytes:d.bytes,text:d.text}; }
+  m.stepOne();
+  if(line.addr!==undefined){
+    const b=line.bytes.map(x=>hx2(x)).join(' ').padEnd(8);
+    traceLines.push(`$${hx4(line.addr)}: ${b} ${line.text}`);
+  } else traceLines.push(`         ${line.mark}`);
+  if(traceLines.length>400) traceLines.splice(0,200);
+  curPC=zpCell(m.cpu.pc);
+}
+
+// ---- audio / boot ----
+function boot(){
+  actx=new (window.AudioContext||window.webkitAudioContext)();
+  sampleRate=actx.sampleRate; samplesPerFrame=Math.round(sampleRate/60); frameBuf=new Float32Array(samplesPerFrame);
+  m=new C64(PRG,sampleRate); rd=m.rd.bind(m);
+  const BUF=1024;
+  node=actx.createScriptProcessor(BUF,0,1);
+  node.onaudioprocess=(e)=>{
+    const out=e.outputBuffer.getChannelData(0);
+    if(!realtime){ out.fill(0); return; }
+    ensure(BUF);
+    for(let i=0;i<BUF;i++){ if(ringLen()>0){ out[i]=ring[rTail]; rTail=(rTail+1)%ring.length; } else out[i]=0; }
+  };
+  gain=actx.createGain(); gain.gain.value=$('vol').value/100;
+  node.connect(gain).connect(actx.destination);
+}
+
+overlay.addEventListener('click', async ()=>{ if(!m) boot(); await actx.resume(); overlay.classList.add('hidden'); });
+$('restart').addEventListener('click', ()=>{ if(m){ m.init(); rHead=rTail=0; everHit.fill(0); traceLines.length=0; } });
+$('vol').addEventListener('input', ()=>{ if(gain) gain.gain.value=$('vol').value/100; });
+$('speed').addEventListener('change', e=>{
+  const v=e.target.value;
+  if(v==='rt'){ realtime=true; rHead=rTail=0; $('step').disabled=true; if(actx) actx.resume(); }
+  else { realtime=false; speedIps=+v; stepAccum=0; $('step').disabled=false; }
+});
+$('step').addEventListener('click', ()=>{ if(m && !realtime) doStep(); });
+
+// ---- 60 fps render of video + grid + trace + scope ----
+const PAL=[]; // built from C64.PALETTE indirectly via screen render; grid uses its own colours
+function draw(){
+  requestAnimationFrame(draw);
+  if(!m) return;
+  // advance emulation in slow modes (real-time is advanced by the audio callback)
+  if(!realtime && speedIps>0){ stepAccum+=speedIps/60; let n=0; while(stepAccum>=1 && n++<20000){ doStep(); stepAccum--; } }
+
+  // video
+  m.renderVideo(img.data); sctx.putImageData(img,0,0);
+
+  // phosphor decay of the heat map
+  const heat=m.heat;
+  for(let i=0;i<256;i++){ if(heat[i]>=1) everHit[i]=1; heat[i]*=0.80; }
+
+  drawGrid();
+  drawTrace();
+  drawScope();
+
+  const c=m.cpu;
+  $('rA').textContent=hx2(c.a); $('rX').textContent=hx2(c.x); $('rY').textContent=hx2(c.y);
+  $('rS').textContent=hx2(c.s); $('rPC').textContent=hx4(c.pc);
+  $('rF').textContent=['N','V','-','B','D','I','Z','C'].map((f,i)=>(c.p&(0x80>>i))?f:'·').join('');
+  $('bar').textContent=m.ram[0x20];
+}
+
+function drawGrid(){
+  const heat=m.heat, ram=m.ram;
+  const L=22,Tp=16, cw=(grid.width-L)/16, ch=(grid.height-Tp)/16;
+  gctx.clearRect(0,0,grid.width,grid.height);
+  gctx.font='10px ui-monospace,monospace'; gctx.textBaseline='middle';
+  gctx.fillStyle='#3a3a48'; gctx.textAlign='center';
+  for(let c=0;c<16;c++) gctx.fillText(c.toString(16),L+c*cw+cw/2,8);
+  gctx.textAlign='right';
+  for(let r=0;r<16;r++) gctx.fillText('$'+(r*16).toString(16).padStart(2,'0'),L-3,Tp+r*ch+ch/2);
+  for(let i=0;i<256;i++){
+    const r=i>>4,c=i&15, x=L+c*cw, y=Tp+r*ch, h=Math.min(1,heat[i]);
+    // background: dark floor; code cells faint blue; hot -> green->white
+    let R,G,B;
+    if(h>0.02){ R=30+h*220|0; G=40+h*200|0; B=50+h*120|0; }
+    else if(everHit[i]){ R=16;G=22;B=34; }      // cold code
+    else { R=11;G=11;B=16; }                     // never-executed (data / unused)
+    gctx.fillStyle=`rgb(${R},${G},${B})`;
+    gctx.fillRect(x+0.5,y+0.5,cw-1,ch-1);
+    // byte value
+    const v=ram[i];
+    gctx.fillStyle = h>0.5?'#0a0a0f':(everHit[i]?'#aab0c0':'#3a3a48');
+    gctx.textAlign='center';
+    gctx.fillText(hx2(v),x+cw/2,y+ch/2+0.5);
+  }
+  // current PC outline (slow / step modes)
+  if(!realtime && curPC>=0){
+    const r=curPC>>4,c=curPC&15;
+    gctx.strokeStyle='#ffe66d'; gctx.lineWidth=1.5;
+    gctx.strokeRect(L+c*cw+0.5,Tp+r*ch+0.5,cw-1,ch-1);
+  }
+}
+
+function drawTrace(){
+  if(realtime){
+    // sample the instruction at the current PC so there's something live to read
+    const c=m.cpu, a=c.pc;
+    let cur='(running at full speed — pick a slow speed to read along)';
+    if(a<=0xff || (a>=0x800&&a<=0x8ff)){ const d=disasm(rd,a); cur=`$${hx4(a)}: ${d.text}`; }
+    traceEl.innerHTML = `<span class="cur">▸ ${cur}</span>\n\n`+
+      '   the trace scrolls thousands of\n   instructions per second here in\n   real time. slow it down to step\n   through the code line by line.';
+    return;
+  }
+  const last=traceLines.slice(-15);
+  const html=last.map((l,i)=>{
+    const isCur=i===last.length-1;
+    const cls=l.includes('——')||l.includes('exit')||l.includes('restart')||l.includes('clear')?'mark':(isCur?'cur':'');
+    return cls?`<span class="${cls}">${l}</span>`:l;
+  }).join('\n');
+  traceEl.innerHTML=html;
+}
+
+function drawScope(){
+  pctx.clearRect(0,0,640,70);
+  pctx.strokeStyle='#88e089'; pctx.lineWidth=1; pctx.beginPath();
+  for(let x=0;x<640;x++){ const s=scopeBuf[(scopeW+((x/640*1024)|0))&1023]; const y=35-s*30; x?pctx.lineTo(x,y):pctx.moveTo(x,y); }
+  pctx.stroke();
+}
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
