@@ -37,17 +37,11 @@
   .overlay.hidden{ opacity:0; pointer-events:none; }
   .play .btn{ font-size:30px; color:var(--accent); border:1px solid var(--accent); border-radius:50%; width:66px; height:66px; line-height:62px; margin:0 auto 10px; text-align:center; }
   .play small{ color:var(--dim); display:block; text-align:center; }
-  /* fullscreen toggle, anchored to the video frame's corner */
-  .fs-btn{ position:absolute; right:8px; bottom:8px; z-index:3; width:30px; height:30px; padding:0;
-           display:flex; align-items:center; justify-content:center; font-size:15px; line-height:1;
-           background:rgba(10,10,16,.62); color:var(--fg); border:1px solid #2a2a38; border-radius:5px;
-           cursor:pointer; opacity:.5; transition:opacity .2s, border-color .2s, color .2s; }
-  .screen-frame:hover .fs-btn{ opacity:1; }
-  .fs-btn:hover, .fs-btn:focus-visible{ opacity:1; border-color:var(--accent); color:var(--accent); outline:none; }
+  /* push the fullscreen button to the far right of the controls bar */
+  button.ctl#fs{ margin-left:auto; }
   /* fullscreen: stretch the canvas to the screen but letterbox to keep the 320:200 pixels square */
   .screen-frame:fullscreen{ aspect-ratio:auto; border:0; border-radius:0; background:#000; }
   .screen-frame:fullscreen canvas#screen{ width:100vw; height:100vh; object-fit:contain; }
-  .screen-frame:fullscreen .fs-btn{ opacity:.5; }
   .controls{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:14px 0 4px; }
   select,button.ctl{ background:#14141c; color:var(--fg); border:1px solid #2a2a38; border-radius:5px; padding:6px 11px; cursor:pointer; font:inherit; }
   button.ctl:hover,select:hover{ border-color:var(--accent); color:var(--accent); }
@@ -91,7 +85,6 @@
       <div class="screen-frame">
         <canvas id="screen" width="320" height="200"></canvas>
         <div class="overlay" id="overlay"><div class="play"><div class="btn">▶</div><small>click to run · audio on</small></div></div>
-        <button class="fs-btn" id="fs" type="button" title="Fullscreen video" aria-label="Fullscreen video">⛶</button>
       </div>
       <div class="controls">
         <label>speed
@@ -108,6 +101,7 @@
         <button class="ctl" id="step" disabled>step ▸</button>
         <button class="ctl" id="restart">⟲ restart</button>
         <label>vol <input type="range" id="vol" min="0" max="100" value="62"></label>
+        <button class="ctl" id="fs" type="button" title="Fullscreen video" aria-label="Fullscreen video">⛶ fullscreen</button>
       </div>
       <div class="scopes">
         <div class="scope-row"><span class="scope-lbl" style="color:#88e089">mix · audio out</span><canvas id="scope" width="640" height="70"></canvas></div>
