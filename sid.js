@@ -131,25 +131,32 @@ export class SID {
     const fc=this.fcut/2048;
     let f=1.16*( 0.06 + fc*fc*0.9 ); if(f>0.95)f=0.95;
     const q=1.0 - this.fres/15*0.85; // resonance -> damping
-    let mix=0;
-    for(let i=0;i<3;i++){
-      const v=this.v[i];
-      v.clockEnv(this.sr);
-      const s=v.output(this.cyclesPerSample);
-      let vo;
-      if(this.froute&(1<<i)){
-        // resonant state-variable filter, one instance per routed voice (sums to the same mix)
-        this.lp[i] += f*this.bp[i];
-        const hp = s - this.lp[i] - q*this.bp[i];
-        this.bp[i] += f*hp;
-        vo = (this.fmode&1?this.lp[i]:0) + (this.fmode&2?this.bp[i]:0) + (this.fmode&4?hp:0);
-      } else {
-        vo = s;   // unrouted voice -> straight through, unfiltered
+    // Oversample the oscillators + filter, then average down. Running the resonant filter at
+    // OSx the rate removes the aliasing/angularity from sharp edges and ringing, so the scope
+    // traces (and the audio) come out smooth — closer to a real SID's analog curves.
+    const OS=4, sub=this.cyclesPerSample/OS, fos=f/OS;
+    for(let i=0;i<3;i++) this.v[i].clockEnv(this.sr);   // envelope is slow: clock once per output sample
+    let mix=0, v0=0, v1=0, v2=0;
+    for(let os=0; os<OS; os++){
+      for(let i=0;i<3;i++){
+        const v=this.v[i];
+        const s=v.output(sub);
+        let vo;
+        if(this.froute&(1<<i)){
+          // resonant state-variable filter, one instance per routed voice (sums to the same mix)
+          this.lp[i] += fos*this.bp[i];
+          const hp = s - this.lp[i] - q*this.bp[i];
+          this.bp[i] += fos*hp;
+          vo = (this.fmode&1?this.lp[i]:0) + (this.fmode&2?this.bp[i]:0) + (this.fmode&4?hp:0);
+        } else {
+          vo = s;   // unrouted voice -> straight through, unfiltered
+        }
+        mix += vo;
+        if(i===0) v0+=vo; else if(i===1) v1+=vo; else v2+=vo;
       }
-      this._vout[i]=vo;          // per-voice scope shows the filtered (or, if unrouted, raw) signal
-      mix += vo;
     }
-    let out=mix*(this.vol/15);
+    this._vout[0]=v0/OS; this._vout[1]=v1/OS; this._vout[2]=v2/OS;  // per-voice scope (filtered if routed)
+    let out=(mix/OS)*(this.vol/15);
     // soft clip (tanh) for analog-ish warmth instead of harsh digital clipping
     return Math.tanh(out*0.42)*0.6;
   }

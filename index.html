@@ -130,10 +130,10 @@
         <button class="ctl" id="fs" type="button" title="Fullscreen video" aria-label="Fullscreen video">⛶ fullscreen</button>
       </div>
       <div class="scopes">
-        <div class="scope-row"><span class="scope-lbl" style="color:#88e089">mix · audio out</span><canvas id="scope" width="640" height="70"></canvas></div>
-        <div class="scope-row"><span class="scope-lbl" style="color:#ffb454">voice 1 · kick + bass</span><canvas id="scope1" width="640" height="48"></canvas></div>
-        <div class="scope-row"><span class="scope-lbl" style="color:#6ad0ff">voice 2 · melody</span><canvas id="scope2" width="640" height="48"></canvas></div>
-        <div class="scope-row"><span class="scope-lbl" style="color:#c08cff">voice 3 · drone</span><canvas id="scope3" width="640" height="48"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#88e089">mix · audio out</span><canvas id="scope" width="640" height="118"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#ffb454">voice 1 · kick + bass</span><canvas id="scope1" width="640" height="96"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#6ad0ff">voice 2 · melody</span><canvas id="scope2" width="640" height="96"></canvas></div>
+        <div class="scope-row"><span class="scope-lbl" style="color:#c08cff">voice 3 · drone</span><canvas id="scope3" width="640" height="96"></canvas></div>
       </div>
     </div>
 
@@ -168,10 +168,10 @@ const grid=$('grid'), gctx=grid.getContext('2d');
 const overlay=$('overlay'), screenFrame=screen.closest('.screen-frame'), traceEl=$('trace');
 // oscilloscopes: index 0 = combined mix, 1..3 = the three SID voices (drawn stacked)
 const scopeDefs=[
-  {cv:$('scope'),  color:'#88e089', amp:1.0},   // mix (audio out)
-  {cv:$('scope1'), color:'#ffb454', amp:0.9},   // voice 1 · kick + bass
-  {cv:$('scope2'), color:'#6ad0ff', amp:0.9},   // voice 2 · melody
-  {cv:$('scope3'), color:'#c08cff', amp:0.9},   // voice 3 · drone
+  {cv:$('scope'),  color:'#88e089', amp:0.80},  // mix (audio out)
+  {cv:$('scope1'), color:'#ffb454', amp:0.68},  // voice 1 · kick + bass (headroom for the kick peak)
+  {cv:$('scope2'), color:'#6ad0ff', amp:0.72},  // voice 2 · melody
+  {cv:$('scope3'), color:'#c08cff', amp:0.72},  // voice 3 · drone
 ];
 for(const s of scopeDefs){ s.ctx=s.cv.getContext('2d'); s.w=s.cv.width; s.h=s.cv.height; }
 
@@ -432,10 +432,8 @@ function drawScope(){
       else if(armed && v>=mean){ trig=j; armed=false; }
     }
     const start = trig>=SCOPE_SPAN ? trig-SCOPE_SPAN : SCOPE_N-SCOPE_SPAN;
-    // draw the locked span across the width — fade (don't clear) the previous frame so each
-    // sweep leaves a soft phosphor afterglow where it struck, decaying over a few frames
-    ctx.fillStyle='rgba(6,6,11,0.40)';
-    ctx.fillRect(0,0,w,h);
+    // clear to a clean frame each sweep — a single crisp standing trace, no afterglow smear
+    ctx.clearRect(0,0,w,h);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(w,mid); ctx.stroke();   // zero line
     ctx.strokeStyle=d.color; ctx.lineWidth=1; ctx.lineJoin='round'; ctx.beginPath();
