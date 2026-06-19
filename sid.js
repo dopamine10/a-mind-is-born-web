@@ -85,9 +85,12 @@ export class SID {
     this.reg=new Uint8Array(0x20);
     this.v=[new Voice(),new Voice(),new Voice()];
     this.v[0].synced=this.v[2]; this.v[1].synced=this.v[0]; this.v[2].synced=this.v[1];
-    this._vout=new Float32Array(3);   // last raw per-voice output (post-envelope, pre-filter)
-    // filter state (state-variable)
-    this.lp=0; this.bp=0;
+    this._vout=new Float32Array(3);   // last per-voice output the scopes show (filtered if routed)
+    // Per-voice filter state. The state-variable filter is linear, so filtering each routed
+    // voice on its own and summing is identical to filtering their sum (the mix is unchanged) —
+    // but it also lets each per-voice scope show the *filtered* waveform, i.e. the shaped,
+    // ringing curves a real SID actually produces, instead of the raw oscillator.
+    this.lp=[0,0,0]; this.bp=[0,0,0];
     this.vol=15; this.fmode=0; this.fcut=0; this.fres=0; this.froute=0;
   }
   write(r, val){
@@ -124,28 +127,29 @@ export class SID {
   osc3(){ return this.v[2].osc3_8(); }
 
   sample(){
-    let filtered=0, direct=0;
-    for(let i=0;i<3;i++){
-      const v=this.v[i];
-      v.clockEnv(this.sr);
-      let s=v.output(this.cyclesPerSample);
-      this._vout[i]=s;
-      if(this.froute&(1<<i)) filtered+=s; else direct+=s;
-    }
-    // state-variable filter
     // cutoff: map 11-bit to frequency (approx SID 6581 curve)
     const fc=this.fcut/2048;
     let f=1.16*( 0.06 + fc*fc*0.9 ); if(f>0.95)f=0.95;
     const q=1.0 - this.fres/15*0.85; // resonance -> damping
-    this.lp += f*this.bp;
-    const hp = filtered - this.lp - q*this.bp;
-    this.bp += f*hp;
-    let fout=0;
-    if(this.fmode&1) fout+=this.lp;
-    if(this.fmode&2) fout+=this.bp;
-    if(this.fmode&4) fout+=hp;
-    // bit3 of fmode ($d418 bit7) mutes voice3 to filter-off path; ignore
-    let out=(direct+fout)*(this.vol/15);
+    let mix=0;
+    for(let i=0;i<3;i++){
+      const v=this.v[i];
+      v.clockEnv(this.sr);
+      const s=v.output(this.cyclesPerSample);
+      let vo;
+      if(this.froute&(1<<i)){
+        // resonant state-variable filter, one instance per routed voice (sums to the same mix)
+        this.lp[i] += f*this.bp[i];
+        const hp = s - this.lp[i] - q*this.bp[i];
+        this.bp[i] += f*hp;
+        vo = (this.fmode&1?this.lp[i]:0) + (this.fmode&2?this.bp[i]:0) + (this.fmode&4?hp:0);
+      } else {
+        vo = s;   // unrouted voice -> straight through, unfiltered
+      }
+      this._vout[i]=vo;          // per-voice scope shows the filtered (or, if unrouted, raw) signal
+      mix += vo;
+    }
+    let out=mix*(this.vol/15);
     // soft clip (tanh) for analog-ish warmth instead of harsh digital clipping
     return Math.tanh(out*0.42)*0.6;
   }

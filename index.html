@@ -422,17 +422,19 @@ function drawScope(){
     // pass 1: mean (trigger level, DC-tolerant) + extent (for hysteresis)
     let sum=0, mn=1e9, mx=-1e9;
     for(let j=0;j<SCOPE_N;j++){ const v=buf[(scopeW+j)&SCOPE_MASK]; sum+=v; if(v<mn)mn=v; if(v>mx)mx=v; }
-    const mean=sum/SCOPE_N, hyst=(mx-mn)*0.05;
-    // pass 2: find the latest rising mean-crossing that leaves a full span to draw
-    let start=SCOPE_N-SCOPE_SPAN, armed=false;
-    for(let j=1;j<=SCOPE_N-SCOPE_SPAN;j++){
+    const mean=sum/SCOPE_N, hyst=(mx-mn)*0.18;   // wide hysteresis -> lock to the main crossing, ignore filter ringing
+    // pass 2: latest rising mean-crossing -> anchor the window to END on it, so every frame
+    // shows the same phase (a true standing wave); draw the SPAN samples leading up to it
+    let trig=-1, armed=false;
+    for(let j=0;j<SCOPE_N;j++){
       const v=buf[(scopeW+j)&SCOPE_MASK];
       if(v<mean-hyst) armed=true;
-      else if(armed && v>=mean){ start=j; armed=false; }
+      else if(armed && v>=mean){ trig=j; armed=false; }
     }
+    const start = trig>=SCOPE_SPAN ? trig-SCOPE_SPAN : SCOPE_N-SCOPE_SPAN;
     // draw the locked span across the width — fade (don't clear) the previous frame so each
     // sweep leaves a soft phosphor afterglow where it struck, decaying over a few frames
-    ctx.fillStyle='rgba(6,6,11,0.20)';
+    ctx.fillStyle='rgba(6,6,11,0.40)';
     ctx.fillRect(0,0,w,h);
     ctx.strokeStyle='rgba(255,255,255,0.05)'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(0,mid); ctx.lineTo(w,mid); ctx.stroke();   // zero line
