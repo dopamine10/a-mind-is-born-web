@@ -130,7 +130,6 @@
         <button class="ctl" id="fs" type="button" title="Fullscreen video" aria-label="Fullscreen video">⛶ fullscreen</button>
       </div>
       <div class="scopes">
-        <div class="scope-row"><span class="scope-lbl" style="color:#88e089">mix · audio out</span><canvas id="scope" width="640" height="140"></canvas></div>
         <div class="scope-row"><span class="scope-lbl" style="color:#ffb454">voice 1 · kick + bass</span><canvas id="scope1" width="640" height="118"></canvas></div>
         <div class="scope-row"><span class="scope-lbl" style="color:#6ad0ff">voice 2 · melody</span><canvas id="scope2" width="640" height="118"></canvas></div>
         <div class="scope-row"><span class="scope-lbl" style="color:#c08cff">voice 3 · drone</span><canvas id="scope3" width="640" height="118"></canvas></div>
@@ -168,7 +167,6 @@ const grid=$('grid'), gctx=grid.getContext('2d');
 const overlay=$('overlay'), screenFrame=screen.closest('.screen-frame'), traceEl=$('trace');
 // oscilloscopes: index 0 = combined mix, 1..3 = the three SID voices (drawn stacked)
 const scopeDefs=[   // amp = target fill: each trace auto-fits to this fraction of the half-height
-  {cv:$('scope'),  color:'#88e089', amp:0.82},  // mix (audio out)
   {cv:$('scope1'), color:'#ffb454', amp:0.80},  // voice 1 · kick + bass
   {cv:$('scope2'), color:'#6ad0ff', amp:0.80},  // voice 2 · melody
   {cv:$('scope3'), color:'#c08cff', amp:0.80},  // voice 3 · drone
@@ -179,9 +177,9 @@ let actx=null,node=null,gain=null,m=null, rd=null;
 let sampleRate=44100, samplesPerFrame=735, realtime=true, paused=false, speedIps=0, stepAccum=0;
 let ring=new Float32Array(1<<16), rHead=0, rTail=0, frameBuf=null, voiceBufs=null, phaseFrame=null;
 const SCOPE_N=4096, SCOPE_MASK=SCOPE_N-1, SCOPE_SPAN=620;   // ring length, mask, samples drawn per trace (fewer cycles -> roomier, steadier)
-const scopeBufs=[0,1,2,3].map(()=>new Float32Array(SCOPE_N)); let scopeW=0;
-// per-voice oscillator phase (0..1), parallel to scopeBufs[1..3], for phase-locked triggering
-const scopePhase=[null, new Float32Array(SCOPE_N), new Float32Array(SCOPE_N), new Float32Array(SCOPE_N)];
+const scopeBufs=[0,1,2].map(()=>new Float32Array(SCOPE_N)); let scopeW=0;   // the 3 voices
+// per-voice oscillator phase (0..1), parallel to scopeBufs, for phase-locked triggering
+const scopePhase=[0,1,2].map(()=>new Float32Array(SCOPE_N));
 const everHit=new Uint8Array(256);
 const traceLines=[]; let curPC=-1;
 
@@ -205,9 +203,9 @@ function scrollSrcTo(el){ srcEl.scrollTop = el.offsetTop - srcEl.clientHeight/2 
 
 const ringLen=()=>(rHead-rTail+ring.length)%ring.length;
 function push(mix,vb,ph,n){ for(let i=0;i<n;i++){
-  ring[rHead]=mix[i]; rHead=(rHead+1)%ring.length;
-  scopeBufs[0][scopeW]=mix[i]; scopeBufs[1][scopeW]=vb[0][i]; scopeBufs[2][scopeW]=vb[1][i]; scopeBufs[3][scopeW]=vb[2][i];
-  scopePhase[1][scopeW]=ph[0][i]; scopePhase[2][scopeW]=ph[1][i]; scopePhase[3][scopeW]=ph[2][i];
+  ring[rHead]=mix[i]; rHead=(rHead+1)%ring.length;   // audio output (mix still plays)
+  scopeBufs[0][scopeW]=vb[0][i]; scopeBufs[1][scopeW]=vb[1][i]; scopeBufs[2][scopeW]=vb[2][i];
+  scopePhase[0][scopeW]=ph[0][i]; scopePhase[1][scopeW]=ph[1][i]; scopePhase[2][scopeW]=ph[2][i];
   scopeW=(scopeW+1)&(SCOPE_N-1);
 } }
 function ensure(n){ let g=0; while(ringLen()<n && g++<512){ m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,samplesPerFrame,phaseFrame); push(frameBuf,voiceBufs,phaseFrame,samplesPerFrame); } }
