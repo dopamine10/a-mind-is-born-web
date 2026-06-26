@@ -52,17 +52,33 @@
              padding:8px 11px; text-shadow:0 1px 2px rgba(0,0,0,.7); }
   .fs-trace-head{ border-bottom:1px solid rgba(255,255,255,.12); padding-bottom:4px; margin-bottom:5px; color:var(--dim); }
   .screen-frame:fullscreen .fs-trace{ display:block; font-size:clamp(11px,1.5vh,18px); }
+  .screen-frame:fullscreen.no-fs-trace .fs-trace{ display:none; }   /* toggled off by the "Show in fullscreen" checkbox */
+  /* "Show in fullscreen" toggle, sitting in the trace panel */
+  .fs-show{ display:flex; justify-content:flex-end; align-items:center; gap:6px; margin:-2px 0 8px;
+            color:var(--dim); font-size:11.5px; cursor:pointer; user-select:none; }
+  .fs-show input{ accent-color:var(--accent); cursor:pointer; margin:0; }
   /* control bar: volume left · speed dropdown centered under the video · fullscreen right */
   .controls{ display:grid; grid-template-columns:1fr auto 1fr; gap:10px; align-items:center; margin:14px 0 4px; }
   .controls #vol{ justify-self:start; }
-  .controls #speed{ justify-self:center; }
+  .controls .speedwrap{ justify-self:center; display:flex; flex-direction:column; align-items:center; gap:5px; }
+  .warp-lbl{ display:flex; align-items:center; gap:5px; color:var(--dim); font-size:11px; cursor:pointer; user-select:none; }
+  .warp-lbl input{ accent-color:var(--accent); cursor:pointer; margin:0; }
+  .speed-custom{ width:130px; background:#14141c; color:var(--fg); border:1px solid #2a2a38; border-radius:5px;
+                 padding:5px 8px; font:inherit; font-size:12px; text-align:center; }
+  .speed-custom:hover,.speed-custom:focus{ border-color:var(--accent); outline:none; }
   .controls #fs{ justify-self:end; }
   @media(max-width:520px){   /* narrow: speed centered on top, volume + fullscreen below */
     .controls{ grid-template-columns:1fr 1fr; grid-template-areas:"speed speed" "vol fs"; row-gap:12px; }
-    .controls #speed{ grid-area:speed; }
+    .controls .speedwrap{ grid-area:speed; }
     .controls #vol{ grid-area:vol; }
     .controls #fs{ grid-area:fs; }
   }
+  /* section transport: jump between the demo's 8-bar sections */
+  .transport{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 2px; }
+  .transport .tlabel{ color:var(--dim); font-size:10px; text-transform:uppercase; letter-spacing:.6px; }
+  .transport input[type=range]{ flex:1 1 110px; min-width:80px; width:auto; accent-color:var(--accent); }
+  .transport .bar-now{ color:var(--fg); font-variant-numeric:tabular-nums; min-width:42px; text-align:right; }
+  .transport .ctl{ padding:5px 9px; }
   select,button.ctl{ background:#14141c; color:var(--fg); border:1px solid #2a2a38; border-radius:5px; padding:6px 11px; cursor:pointer; font:inherit; }
   button.ctl:hover,select:hover{ border-color:var(--accent); color:var(--accent); }
   button.ctl:disabled{ opacity:.35; cursor:default; color:var(--fg); border-color:#2a2a38; }
@@ -95,6 +111,51 @@
   .scope-lbl{ position:absolute; top:5px; left:7px; font-size:9.5px; letter-spacing:.4px;
               text-transform:uppercase; pointer-events:none; opacity:.92;
               background:rgba(6,6,11,.82); padding:1px 6px 2px; border-radius:4px; }
+  /* --- byte editor / preset patcher --- */
+  .editor .ed-sub{ color:var(--dim); font-weight:400; text-transform:none; letter-spacing:0; }
+  .presets{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:11px; }
+  .pgroup{ display:inline-flex; gap:6px; padding:5px; border:1px solid #1d1d28; border-radius:7px; background:#0b0b12; }
+  .pgroup::before{ content:attr(data-name); align-self:center; padding-left:4px; color:#4f4f5e;
+                   font-size:9.5px; text-transform:uppercase; letter-spacing:.5px; }
+  .presets .ctl.active,.scenes .ctl.active{ border-color:var(--accent); color:var(--accent); background:#101a14; box-shadow:inset 0 0 0 1px rgba(136,224,137,.35); }
+  .scenes{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:0 0 11px; }
+  .scenes #sceneBtns{ display:contents; }
+  .scenes .scene-lbl{ color:#4f4f5e; font-size:9.5px; text-transform:uppercase; letter-spacing:.5px; }
+  .scenes .scene-save{ color:var(--dim); }
+  .scenes .user-scene{ border-style:dashed; border-top-right-radius:0; border-bottom-right-radius:0; }
+  .scene-wrap{ display:inline-flex; align-items:stretch; }
+  .scene-del{ background:#1a1320; color:#cf9aa8; border:1px solid #4a2733; border-left:0;
+              border-radius:0 5px 5px 0; padding:0 9px; cursor:pointer; font:inherit; font-weight:700; line-height:1; }
+  .scene-del:hover{ color:#fff; background:#7a2533; border-color:#ff8f8f; }
+  .scene-del:focus-visible{ outline:2px solid #ff8f8f; outline-offset:-1px; }
+  .editor textarea{ width:100%; background:#08080d; color:#9fb0c8; border:1px solid #23232f;
+              border-radius:5px; font:11.5px/1.55 ui-monospace,Consolas,monospace; padding:9px 11px;
+              resize:vertical; white-space:pre; overflow:auto; tab-size:2; }
+  .editor textarea:focus{ outline:none; border-color:var(--accent); }
+  .ed-actions{ display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-top:10px; }
+  .pstr{ flex:1 1 220px; min-width:150px; background:#08080d; color:#9fb0c8; border:1px solid #23232f;
+         border-radius:5px; font:12px ui-monospace,Consolas,monospace; padding:6px 10px; }
+  .pstr:focus{ outline:none; border-color:var(--accent); }
+  .ed-status{ color:var(--dim); font-size:11.5px; margin-left:2px; }
+  .ed-status.err{ color:#ff8f8f; }
+  .ed-status .hot{ color:var(--hot); }
+  /* --- live knobs --- */
+  .knobs h3{ font-size:10px; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.5px; margin:15px 0 9px; }
+  .knobs h3 span{ color:#4f4f5e; margin-left:7px; font-weight:400; text-transform:none; letter-spacing:0; }
+  .knob-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+  .knob-cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+  @media(max-width:560px){ .knob-cols{ grid-template-columns:1fr; } }
+  .byte-row{ display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:8px; }
+  .knob-tables{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media(max-width:560px){ .knob-tables{ grid-template-columns:1fr; } }
+  .knob{ background:#0b0b12; border:1px solid #1d1d28; border-radius:6px; padding:8px 9px; }
+  .knob-top{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; margin-bottom:6px; }
+  .knob-name{ color:var(--fg); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .knob-off{ color:#4f4f5e; font-size:10px; flex:none; }
+  .knob input[type=range]{ width:100%; margin:0 0 6px; accent-color:var(--accent); display:block; }
+  .knob-hex{ width:100%; background:#08080d; color:#9fb0c8; border:1px solid #23232f; border-radius:4px;
+             font:11.5px ui-monospace,Consolas,monospace; padding:3px 6px; text-align:center; text-transform:uppercase; }
+  .knob-hex:focus{ outline:none; border-color:var(--accent); }
 </style>
 </head>
 <body>
@@ -117,17 +178,31 @@
       </div>
       <div class="controls">
         <input type="range" id="vol" min="0" max="100" value="62" aria-label="volume" title="volume">
-        <select id="speed" aria-label="speed" autocomplete="off">
-          <option value="rt">real-time + audio</option>
-          <option value="4000000">insane · 4000000 ip/s</option>
-          <option value="400000">turbo · 400000 ip/s</option>
-          <option value="40000">fast · 40000 ip/s</option>
-          <option value="4000">slow · 4000 ip/s</option>
-          <option value="400">crawl · 400 ip/s</option>
-          <option value="40">creep · 40 ip/s</option>
-          <option value="4">snail · 4 ip/s</option>
-        </select>
+        <div class="speedwrap">
+          <select id="speed" aria-label="speed" autocomplete="off">
+            <option value="4000000">insane · 4000000 ip/s</option>
+            <option value="400000">turbo · 400000 ip/s</option>
+            <option value="rt" selected>real-time + audio · 300000 ip/s</option>
+            <option value="250000">mellow · 250000 ip/s</option>
+            <option value="40000">fast · 40000 ip/s</option>
+            <option value="4000">slow · 4000 ip/s</option>
+            <option value="400">crawl · 400 ip/s</option>
+            <option value="40">creep · 40 ip/s</option>
+            <option value="4">snail · 4 ip/s</option>
+          </select>
+          <input type="number" id="speedCustom" class="speed-custom" min="1" step="1000" placeholder="custom ip/s" aria-label="custom speed in instructions per second" title="Type your own speed (instructions/sec) and press Enter">
+          <label class="warp-lbl" title="Play pitch-shifted (varispeed) audio in the non-real-time speeds — fun near real-time, garbled at the extremes"><input type="checkbox" id="warpChk"> warp audio at other speeds</label>
+        </div>
         <button class="ctl" id="fs" type="button" title="Fullscreen video" aria-label="Fullscreen video">⛶ fullscreen</button>
+      </div>
+      <div class="transport">
+        <span class="tlabel">section</span>
+        <button class="ctl" id="secRestart" type="button" title="Back to the start (bar 0)">⟲</button>
+        <button class="ctl" id="secPrev" type="button" title="Previous 8-bar section">◀</button>
+        <button class="ctl" id="secNext" type="button" title="Next 8-bar section">▶</button>
+        <button class="ctl" id="skipIntro" type="button" title="Skip the intro — jump to bar 16">skip intro</button>
+        <input type="range" id="barSeek" min="0" max="63" value="0" aria-label="seek section / bar">
+        <span class="bar-now" id="barNow">0/63</span>
       </div>
       <div class="scopes">
         <div class="scope-row"><span class="scope-lbl" style="color:#ffb454">voice 1 · kick + bass</span><canvas id="scope1" width="640" height="118"></canvas></div>
@@ -142,6 +217,7 @@
         <canvas id="grid" width="466" height="470"></canvas>
       </div>
       <div class="panel" style="margin-top:14px;">
+        <label class="fs-show" title="Show this instruction preview as an overlay in fullscreen"><input type="checkbox" id="fsTraceChk"> Show in fullscreen</label>
         <div class="trace-head"><span class="t-ad">addr</span>   <span class="t-by">bytes</span>    <span class="t-mn">instruction</span></div>
         <div id="trace"></div>
         <div class="regs">
@@ -150,6 +226,58 @@
           <span>bar <b id="bar">0</b>/64</span>
         </div>
       </div>
+    </div>
+  </div>
+
+  <div class="panel editor" style="margin-top:18px;">
+    <h2>Patch the program <span class="ed-sub">— edit the 256 bytes (file offsets, hex), then load &amp; restart</span></h2>
+    <div class="presets">
+      <button class="ctl" data-preset="original" type="button" title="Restore the official 256 bytes">Original</button>
+    </div>
+    <div class="presets">
+      <span class="pgroup" data-name="length" title="byte $41 — the cpx #$3f that ends the song; pick one">
+        <button class="ctl" data-preset="ext4x" type="button" title="$41: 3F → 90 — ~2.3× the runtime, then it still ends">Extended Life</button>
+        <button class="ctl" data-preset="bornanddies" type="button" title="$41: 3F → FF — clock_msb never reaches the finale">A Mind is born and dies</button>
+      </span>
+      <span class="pgroup" data-name="loop" title="byte $43 — the beq branch offset">
+        <button class="ctl" data-preset="altloop" type="button" title="$43: 08 → FF — re-targets the beq branch">Alt Loop</button>
+      </span>
+    </div>
+    <div class="scenes">
+      <span class="scene-lbl">scenes</span>
+      <span id="sceneBtns"></span>
+      <button class="ctl scene-save" id="saveScene" type="button" title="Save the current changes as a new scene">＋ save</button>
+    </div>
+    <textarea id="hex" spellcheck="false" rows="18" aria-label="program bytes"></textarea>
+    <div class="ed-actions">
+      <button class="ctl" id="load" type="button">⟳ Load &amp; restart</button>
+      <button class="ctl" id="revert" type="button">Revert edits</button>
+      <button class="ctl" id="download" type="button">⭳ Download .prg</button>
+      <span class="ed-status" id="edstatus"></span>
+    </div>
+    <div class="ed-actions">
+      <input type="text" id="pstr" class="pstr" spellcheck="false" autocomplete="off" placeholder="change string · e.g. 41=ff,1a=20 — paste &amp; Load">
+      <button class="ctl" id="loadstr" type="button">Load string</button>
+      <button class="ctl" id="copystr" type="button">⧉ Copy changes</button>
+    </div>
+  </div>
+
+  <div class="panel knobs" style="margin-top:14px;">
+    <h2>Live knobs <span class="ed-sub">— nudge a parameter and hear it morph in real time (no restart)</span></h2>
+    <div class="ed-actions" style="margin:0 0 4px;">
+      <button class="ctl" id="resetknobs" type="button">↺ Reset knobs to original</button>
+      <input type="text" id="kstr" class="pstr" spellcheck="false" autocomplete="off" placeholder="knob string · e.g. 91=d3,1a=20 — paste &amp; Load">
+      <button class="ctl" id="loadkstr" type="button">Load knobs</button>
+      <button class="ctl" id="copykstr" type="button">⧉ Copy knobs</button>
+      <span class="ed-status" id="kstatus"></span>
+    </div>
+    <div class="knob-cols">
+      <div><h3>Rhythm <span>timing masks</span></h3><div class="knob-grid" id="knobRhythm"></div></div>
+      <div><h3>Voices <span>seed · pitch · timbre</span></h3><div class="knob-grid" id="knobVoice"></div></div>
+    </div>
+    <div class="knob-tables">
+      <div><h3>Bass notes <span>$f4–$f7 · basstbl</span></h3><div class="byte-row" id="knobBass"></div></div>
+      <div><h3>Melody notes <span>$f8–$ff · freqtbl</span></h3><div class="byte-row" id="knobMel"></div></div>
     </div>
   </div>
 </div>
@@ -162,6 +290,9 @@ import { disasm, hx2, hx4 } from './disasm.js';
 import { SRC } from './source.js';
 
 const $=id=>document.getElementById(id);
+// working copy of the program bytes — edited / patched in the UI, reloaded into the emulator.
+const ORIG=Uint8Array.from(PRG);
+let prgBytes=Uint8Array.from(PRG);
 const screen=$('screen'), sctx=screen.getContext('2d'), img=sctx.createImageData(320,200);
 const grid=$('grid'), gctx=grid.getContext('2d');
 const overlay=$('overlay'), screenFrame=screen.closest('.screen-frame'), traceEl=$('trace');
@@ -175,7 +306,8 @@ for(const s of scopeDefs){ s.ctx=s.cv.getContext('2d'); s.w=s.cv.width; s.h=s.cv
 
 let actx=null,node=null,gain=null,m=null, rd=null;
 let sampleRate=44100, samplesPerFrame=735, realtime=true, paused=false, speedIps=0, stepAccum=0;
-let ring=new Float32Array(1<<16), rHead=0, rTail=0, frameBuf=null, voiceBufs=null, phaseFrame=null;
+let warpAudio=false, warpRate=1;   // warp = play pitch-shifted (varispeed) audio in the non-real-time speeds
+let frameBuf=null, voiceBufs=null, phaseFrame=null, targetSamples=8192;
 const SCOPE_N=4096, SCOPE_MASK=SCOPE_N-1, SCOPE_SPAN=620;   // ring length, mask, samples drawn per trace (fewer cycles -> roomier, steadier)
 const scopeBufs=[0,1,2].map(()=>new Float32Array(SCOPE_N)); let scopeW=0;   // the 3 voices
 // per-voice oscillator phase (0..1), parallel to scopeBufs, for phase-locked triggering
@@ -201,14 +333,72 @@ let curLineEl=null;
 })();
 function scrollSrcTo(el){ srcEl.scrollTop = el.offsetTop - srcEl.clientHeight/2 + el.offsetHeight/2; }
 
-const ringLen=()=>(rHead-rTail+ring.length)%ring.length;
-function push(mix,vb,ph,n){ for(let i=0;i<n;i++){
-  ring[rHead]=mix[i]; rHead=(rHead+1)%ring.length;   // audio output (mix still plays)
-  scopeBufs[0][scopeW]=vb[0][i]; scopeBufs[1][scopeW]=vb[1][i]; scopeBufs[2][scopeW]=vb[2][i];
-  scopePhase[0][scopeW]=ph[0][i]; scopePhase[1][scopeW]=ph[1][i]; scopePhase[2][scopeW]=ph[2][i];
-  scopeW=(scopeW+1)&(SCOPE_N-1);
-} }
-function ensure(n){ let g=0; while(ringLen()<n && g++<512){ m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,samplesPerFrame,phaseFrame); push(frameBuf,voiceBufs,phaseFrame,samplesPerFrame); } }
+// ---- audio output is an AudioWorklet "sink": it only plays from a queue we keep filled a little
+// ---- ahead of playback. The heavy work (6502 emulation + SID synthesis) stays on the main thread,
+// ---- exactly as before, so emulation is byte-for-byte unchanged — but the audio thread never has
+// ---- to compute under deadline, and the lead buffer rides out main-thread/render jitter that used
+// ---- to underrun the old ScriptProcessor and crackle.
+const WORKLET_SRC=`
+class AmibSink extends AudioWorkletProcessor{
+  constructor(){ super(); this.q=[]; this.qLen=0; this.cur=null; this.pos=0; this.target=8192; this.low=4096; this.req=false;
+    this.port.onmessage=(e)=>{ const d=e.data;
+      if(d.type==='samples'){ this.q.push(d.buf); this.qLen+=d.buf.length; this.req=false; }
+      else if(d.type==='config'){ this.target=d.target; this.low=d.low; }
+      else if(d.type==='flush'){ this.q.length=0; this.qLen=0; this.cur=null; this.pos=0; this.req=false; } }; }
+  process(_in,outs){ const out=outs[0][0]; if(!out) return true; const n=out.length;
+    for(let i=0;i<n;i++){
+      if(!this.cur||this.pos>=this.cur.length){ this.cur=this.q.shift()||null; this.pos=0; if(!this.cur){ while(i<n) out[i++]=0; break; } }
+      out[i]=this.cur[this.pos++]; this.qLen--; }
+    if(!this.req && this.qLen<this.low){ this.req=true; this.port.postMessage({type:'need',amount:this.target-this.qLen}); }
+    return true; } }
+registerProcessor('amib-sink',AmibSink);`;
+const TARGET_LEAD_S=0.10;   // keep ~100 ms of audio queued ahead of playback; raise if any crackle remains
+const WARP_RT_IPS=300000;   // ~instructions/sec at real-time, for mapping the speed dropdown to a warp factor
+const clampWarp=x=>Math.min(4, Math.max(0.05, x));   // keep the resample sane: cap fast, floor slow
+let warpMix=null, warpV=null, warpP=null;
+function ensureWarp(n){ if(!warpMix||warpMix.length<n){ warpMix=new Float32Array(n); warpV=[0,1,2].map(()=>new Float32Array(n)); warpP=[0,1,2].map(()=>new Float32Array(n)); } }
+// run the emulator forward to make ~`amount` output samples, ship them to the sink, and feed the scopes.
+// At warpRate=1 this is plain real-time; otherwise it generates the emulator's audio and resamples it to
+// real-time by warpRate (a varispeed / turntable pitch+tempo shift). Emulation itself is unchanged.
+function produce(amount){
+  if(!node || !realtime || paused) return;
+  const spf=samplesPerFrame;
+  if(warpRate===1){
+    const frames=Math.max(1,Math.ceil(amount/spf)), buf=new Float32Array(frames*spf);
+    let off=0;
+    for(let f=0;f<frames;f++){
+      m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,spf,phaseFrame);
+      buf.set(frameBuf.subarray(0,spf),off); off+=spf;
+      for(let i=0;i<spf;i++){   // same scope/phase capture the old push() did
+        scopeBufs[0][scopeW]=voiceBufs[0][i]; scopeBufs[1][scopeW]=voiceBufs[1][i]; scopeBufs[2][scopeW]=voiceBufs[2][i];
+        scopePhase[0][scopeW]=phaseFrame[0][i]; scopePhase[1][scopeW]=phaseFrame[1][i]; scopePhase[2][scopeW]=phaseFrame[2][i];
+        scopeW=(scopeW+1)&(SCOPE_N-1);
+      }
+    }
+    node.port.postMessage({type:'samples',buf},[buf.buffer]);
+    return;
+  }
+  // varispeed: generate whole frames of emulator audio, then resample emu -> output by warpRate (pitch+tempo)
+  const frames=Math.max(1, Math.ceil(Math.ceil(amount*warpRate)/spf)), emu=frames*spf;
+  ensureWarp(emu);
+  for(let f=0;f<frames;f++){
+    m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,spf,phaseFrame);
+    const base=f*spf;
+    warpMix.set(frameBuf.subarray(0,spf),base);
+    for(let v=0;v<3;v++){ warpV[v].set(voiceBufs[v].subarray(0,spf),base); warpP[v].set(phaseFrame[v].subarray(0,spf),base); }
+  }
+  const outN=Math.max(1, Math.round(emu/warpRate)), out=new Float32Array(outN), ratio=emu/outN;
+  for(let i=0;i<outN;i++){
+    const x=i*ratio, x0=x|0, fr=x-x0, x1=x0+1<emu?x0+1:emu-1;
+    out[i]=warpMix[x0]*(1-fr)+warpMix[x1]*fr;   // linear interpolation
+    scopeBufs[0][scopeW]=warpV[0][x0]; scopeBufs[1][scopeW]=warpV[1][x0]; scopeBufs[2][scopeW]=warpV[2][x0];
+    scopePhase[0][scopeW]=warpP[0][x0]; scopePhase[1][scopeW]=warpP[1][x0]; scopePhase[2][scopeW]=warpP[2][x0];
+    scopeW=(scopeW+1)&(SCOPE_N-1);
+  }
+  node.port.postMessage({type:'samples',buf:out},[out.buffer]);
+}
+// drop queued audio and re-prime from the current emulator position (restart / seek / resume)
+function flushAudio(){ if(node){ node.port.postMessage({type:'flush'}); produce(targetSamples); } }
 
 // ---- emulator stepping for slow modes (mirrors C64.stepOne but captures disasm pre-exec) ----
 function zpCell(a){ if(a>=0&&a<=0xff) return a; if(a>=0x800&&a<=0x8ff) return a&0xff; return -1; }
@@ -229,23 +419,24 @@ function doStep(){
 }
 
 // ---- audio / boot ----
-function boot(){
+async function boot(){
   actx=new (window.AudioContext||window.webkitAudioContext)();
   sampleRate=actx.sampleRate; samplesPerFrame=Math.round(sampleRate/60);
   frameBuf=new Float32Array(samplesPerFrame);
   voiceBufs=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
   phaseFrame=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
-  m=new C64(PRG,sampleRate); rd=m.rd.bind(m);
-  const BUF=1024;
-  node=actx.createScriptProcessor(BUF,0,1);
-  node.onaudioprocess=(e)=>{
-    const out=e.outputBuffer.getChannelData(0);
-    if(!realtime || paused){ out.fill(0); return; }
-    ensure(BUF);
-    for(let i=0;i<BUF;i++){ if(ringLen()>0){ out[i]=ring[rTail]; rTail=(rTail+1)%ring.length; } else out[i]=0; }
-  };
-  gain=actx.createGain(); gain.gain.value=$('vol').value/100;
-  node.connect(gain).connect(actx.destination);
+  m=new C64(prgBytes,sampleRate); rd=m.rd.bind(m);   // emulator stays on the main thread, unchanged
+  targetSamples=Math.max(samplesPerFrame*2, Math.round(sampleRate*TARGET_LEAD_S));
+  try{
+    const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'text/javascript'}));
+    await actx.audioWorklet.addModule(url); URL.revokeObjectURL(url);
+    node=new AudioWorkletNode(actx,'amib-sink',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[1]});
+    node.port.onmessage=(e)=>{ if(e.data.type==='need') produce(e.data.amount); };   // sink pulls when its queue runs low
+    node.port.postMessage({type:'config',target:targetSamples,low:Math.round(targetSamples*0.5)});
+    gain=actx.createGain(); gain.gain.value=$('vol').value/100;
+    node.connect(gain).connect(actx.destination);
+    produce(targetSamples);   // prime the queue so playback starts already filled
+  }catch(err){ console.error('AudioWorklet init failed:', err); }
 }
 
 // click the video (standard view or fullscreen) to start it, then to toggle pause/play
@@ -255,6 +446,7 @@ function setPaused(p){
   overlay.classList.toggle('hidden', !p);              // overlay (▶) doubles as the paused indicator
   if(p && overlayMsg) overlayMsg.textContent='paused · click to resume';
   if(actx){ p ? actx.suspend() : actx.resume(); }      // also silences / restores real-time audio
+  if(!p && realtime) flushAudio();                     // re-prime the sink cleanly on resume
 }
 screenFrame.addEventListener('click', ()=>{
   if(!m){ boot(); setPaused(false); }   // first click: boot + play
@@ -262,11 +454,373 @@ screenFrame.addEventListener('click', ()=>{
 });
 $('vol').addEventListener('input', ()=>{ if(gain) gain.gain.value=$('vol').value/100; });
 function applySpeed(v){
-  if(v==='rt'){ realtime=true; rHead=rTail=0; if(actx && !paused) actx.resume(); }
-  else { realtime=false; speedIps=+v; stepAccum=0; }
+  if(v==='rt'){ realtime=true; warpRate=1; if(actx && !paused) actx.resume(); flushAudio(); }
+  else if(warpAudio){                                  // varispeed: run audio-driven, pitch/tempo = warpRate
+    realtime=true; warpRate=clampWarp(+v/WARP_RT_IPS); if(actx && !paused) actx.resume(); flushAudio();
+  } else {                                             // silent instruction-stepping (the educational view)
+    realtime=false; speedIps=+v; stepAccum=0; warpRate=1; if(node) node.port.postMessage({type:'flush'});
+  }
 }
-$('speed').addEventListener('change', e=>applySpeed(e.target.value));
+$('speed').addEventListener('change', e=>{ applySpeed(e.target.value); refreshToggles(prgBytes); });
+// pick a speed in the dropdown, creating a one-off "custom · N ip/s" option for non-standard values
+function selectSpeed(v){
+  const sel=$('speed'); v=String(v);
+  if(v!=='rt' && !sel.querySelector('option[value="'+v+'"]')){
+    let opt=sel.querySelector('option[data-custom]');
+    if(!opt){ opt=document.createElement('option'); opt.dataset.custom='1'; sel.appendChild(opt); }
+    opt.value=v; opt.textContent='custom · '+v+' ip/s';
+  }
+  sel.value=v;
+}
+const speedCustom=$('speedCustom');
+function setCustomSpeed(){
+  const v=parseInt(speedCustom.value,10);
+  if(!(v>0)){ return; }
+  selectSpeed(v); applySpeed($('speed').value); refreshToggles(prgBytes);
+}
+speedCustom.addEventListener('change', setCustomSpeed);
+speedCustom.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); setCustomSpeed(); } });
+const warpChk=$('warpChk');
+warpAudio = localStorage.getItem('amib_warp')==='1'; warpChk.checked = warpAudio;
+warpChk.addEventListener('change', ()=>{
+  warpAudio=warpChk.checked; localStorage.setItem('amib_warp', warpAudio?'1':'0');
+  applySpeed($('speed').value); refreshToggles(prgBytes);   // re-apply speed + refresh scene highlights
+});
 applySpeed($('speed').value);   // sync state to whatever the browser restored (avoids a silent rt/slow mismatch on reload)
+
+// ---- byte editor + preset patcher --------------------------------------------------------
+// Offsets are into the raw .prg file (incl. the 2-byte load header), the same convention the
+// presets use. A patch is a list of [offset, value] pairs applied onto the current bytes.
+const hexEl=$('hex'), statusEl=$('edstatus');
+// Each mode is a single-byte patch. Modes sharing an `off` form a group: setting one to its
+// value implicitly clears the others (their value no longer matches), so a group is mutually
+// exclusive. Active state is always derived from the bytes themselves, never tracked separately.
+const PRESETS={
+  bornanddies:{off:0x41, val:0xff},        // cpx #$3f operand -> #$ff : never reaches the ending
+  ext4x:      {off:0x41, val:0x90},        // cpx #$3f operand -> #$90 : long extended build-up
+  altloop:    {off:0x43, val:0xff},        // beq highpass branch offset -> $ff
+};
+// scenes: multi-byte combos applied as a whole (full diff from the original release).
+// Built-ins live in code; user scenes are saved to localStorage as change-strings.
+const BUILTIN_SCENES=[
+  {name:'Smooth ’n’ Slow',       pairs:[[0x1a,0x08],[0x1c,0x14],[0x41,0x90],[0x59,0x3b],[0x67,0x08],[0x8d,0x1e],[0x91,0xdf]], speed:'rt', warp:false},
+  {name:'Turbo Smooth ’n’ Slow', pairs:[[0x1a,0x08],[0x1c,0x14],[0x41,0x90],[0x59,0x3b],[0x67,0x08],[0x8d,0x1e],[0x91,0xdf]], speed:'400000', warp:true},
+  {name:'Glitch Step',           pairs:[[0x1a,0x08],[0x1c,0x14],[0x41,0x90],[0x67,0x08],[0x8d,0x58],[0x91,0xdf]], speed:'rt', warp:false},
+];
+const SCENE_KEY='amib_scenes';
+function sceneMatches(bytes, pairs){      // true if `bytes` == ORIG with exactly these pairs applied
+  if(!pairs) return false;
+  const map=new Map(pairs);
+  for(let i=0;i<bytes.length;i++){ const exp=map.has(i)?map.get(i):ORIG[i]; if(bytes[i]!==exp) return false; }
+  return true;
+}
+function sceneActive(b){                   // a scene is active only if bytes AND speed AND warp all match
+  return sceneMatches(prgBytes, b._pairs) && ($('speed').value===(b._speed||'rt')) && (!!warpAudio===!!b._warp);
+}
+function strToPairs(s){                    // tolerant parse of "off=val,…" into [[off,val],…]
+  const out=[]; s=(s||'').trim().replace(/^amib\d*:/i,'');
+  for(const tok of s.split(/[\s,;]+/)){ if(!tok) continue;
+    const mm=tok.match(/^(?:\$|0x)?([0-9a-f]{1,2})\s*[=:]\s*(?:\$|0x)?([0-9a-f]{1,2})$/i);
+    if(mm) out.push([parseInt(mm[1],16)&0xff, parseInt(mm[2],16)&0xff]); }
+  return out;
+}
+const pairsToStr=pairs=>pairs.map(([o,v])=>hx2(o)+'='+hx2(v)).join(',');
+function loadUserScenes(){ try{ return JSON.parse(localStorage.getItem(SCENE_KEY)||'[]'); }catch(e){ return []; } }
+function saveUserScenes(a){ try{ localStorage.setItem(SCENE_KEY, JSON.stringify(a)); }catch(e){} }
+function toDump(bytes){            // 16 bytes/row, "OFFS: xx xx ..." — offsets match the preset addresses
+  let out='';
+  for(let i=0;i<bytes.length;i+=16){
+    const row=[];
+    for(let j=i;j<Math.min(i+16,bytes.length);j++) row.push(hx2(bytes[j]));
+    out+=hx2(i)+': '+row.join(' ')+'\n';
+  }
+  return out.replace(/\n$/,'');
+}
+function parseDump(text){          // tolerant: strips a leading "OFFS:" label, ignores $/0x and commas
+  const bytes=[];
+  for(let line of text.split('\n')){
+    const ci=line.indexOf(':'); if(ci>=0 && ci<=4) line=line.slice(ci+1);
+    for(let tok of line.split(/[\s,]+/)){
+      if(!tok) continue;
+      tok=tok.replace(/^(0x|\$)/i,'');
+      if(!/^[0-9a-fA-F]{1,2}$/.test(tok)) throw new Error('bad value "'+tok+'"');
+      bytes.push(parseInt(tok,16));
+    }
+  }
+  return Uint8Array.from(bytes);
+}
+function diffNote(bytes){          // summarise how the bytes differ from the official release
+  const diffs=[];
+  const n=Math.min(bytes.length,ORIG.length);
+  for(let i=0;i<n;i++) if(bytes[i]!==ORIG[i]) diffs.push('$'+hx2(i)+'='+hx2(bytes[i]));
+  if(bytes.length!==ORIG.length) diffs.push(bytes.length+' bytes');
+  return diffs.length ? diffs.join('  ') : 'original 256 bytes';
+}
+function status(msg,err){ statusEl.innerHTML=msg; statusEl.classList.toggle('err',!!err); }
+function isOriginal(bytes){
+  if(bytes.length!==ORIG.length) return false;
+  for(let i=0;i<bytes.length;i++) if(bytes[i]!==ORIG[i]) return false;
+  return true;
+}
+// light each toggle that matches the current bytes (Original lights when nothing is patched)
+function refreshToggles(bytes){
+  for(const btn of document.querySelectorAll('.presets .ctl')){
+    const key=btn.dataset.preset;
+    const on = key==='original' ? isOriginal(bytes)
+                                : (PRESETS[key].off<bytes.length && bytes[PRESETS[key].off]===PRESETS[key].val);
+    btn.classList.toggle('active', on);
+  }
+  for(const btn of document.querySelectorAll('#sceneBtns .ctl'))
+    btn.classList.toggle('active', sceneActive(btn));
+}
+hexEl.value=toDump(prgBytes);
+refreshToggles(prgBytes);
+
+// load `bytes` into the emulator and restart cleanly (booting audio on first use)
+function loadPRG(bytes){
+  prgBytes=bytes;
+  if(!m){ boot(); }                 // first load: spin up audio + the C64 (this is a user gesture)
+  m.prg=prgBytes; m.init();         // reload the program image and cold-restart from SYS 2225
+  resetDerived();                   // wipe UI/render/audio state so nothing from the old run lingers
+  setPaused(false);
+  refreshToggles(prgBytes);          // keep the mode toggles in sync with whatever was loaded
+  syncKnobs(prgBytes);               // and the live-knob sliders
+  updateSectionMax();                // a length change ($41) moves the seek slider's ceiling
+  status('loaded · <span class="hot">'+diffNote(prgBytes)+'</span>');
+}
+$('load').addEventListener('click', ()=>{
+  let bytes; try{ bytes=parseDump(hexEl.value); }catch(e){ status(e.message,true); return; }
+  if(bytes.length<2){ status('need at least the 2-byte load header',true); return; }
+  if(bytes.length!==256) status('note: '+bytes.length+' bytes (release is 256) — loading anyway');
+  hexEl.value=toDump(bytes);        // normalise the formatting back into the box
+  loadPRG(bytes);                   // loadPRG re-derives the toggle highlights from the bytes
+});
+$('revert').addEventListener('click', ()=>{ hexEl.value=toDump(prgBytes); status('edits reverted to the loaded bytes'); });
+$('download').addEventListener('click', ()=>{
+  const url=URL.createObjectURL(new Blob([prgBytes],{type:'application/octet-stream'}));
+  const a=document.createElement('a'); a.href=url; a.download='a-mind-is-born.prg';
+  a.click(); URL.revokeObjectURL(url);
+});
+for(const btn of document.querySelectorAll('.presets .ctl')){
+  btn.addEventListener('click', ()=>{
+    const key=btn.dataset.preset;
+    let bytes;
+    if(key==='original'){
+      bytes=Uint8Array.from(ORIG);                 // clear every patch at once
+    } else {
+      const p=PRESETS[key];
+      bytes=Uint8Array.from(prgBytes);
+      if(p.off<bytes.length){
+        // toggle: if this mode is already on, switch its byte back off (to the original value);
+        // otherwise turn it on — which also turns off any sibling sharing this same offset.
+        bytes[p.off] = (bytes[p.off]===p.val) ? ORIG[p.off] : p.val;
+      }
+    }
+    hexEl.value=toDump(bytes);
+    loadPRG(bytes);                                // re-derives all toggle highlights from the bytes
+  });
+}
+// scenes (built-in + user-saved): render buttons, apply combos, save current state, delete
+// set the speed dropdown + warp toggle from a scene (or back to default), then apply
+function applySceneState(speed, warp){
+  warpAudio=!!warp; warpChk.checked=warpAudio; localStorage.setItem('amib_warp', warpAudio?'1':'0');
+  selectSpeed(speed||'rt'); applySpeed($('speed').value);   // recreates a custom option if the scene used one
+  refreshToggles(prgBytes);                              // speed/warp affect which scene is "active"
+}
+function renderScenes(){
+  const host=$('sceneBtns'); host.innerHTML='';
+  const list=[...BUILTIN_SCENES.map(s=>({name:s.name,pairs:s.pairs,user:false,speed:s.speed,warp:s.warp})),
+              ...loadUserScenes().map(u=>({name:u.name,pairs:strToPairs(u.str),user:true,speed:u.speed,warp:u.warp}))];
+  for(const sc of list){
+    const b=document.createElement('button'); b.type='button'; b.className='ctl'+(sc.user?' user-scene':'');
+    b.textContent=sc.name; b._pairs=sc.pairs; b._user=sc.user; b._name=sc.name; b._speed=sc.speed; b._warp=sc.warp;
+    b.title=(sc.user?'click to apply':pairsToStr(sc.pairs))+(sc.user?'\n'+pairsToStr(sc.pairs):'')+(sc.speed&&sc.speed!=='rt'?'\nspeed: '+sc.speed+(sc.warp?' (warp)':''):'');
+    if(sc.user){                                  // user scenes get a delete (×) handle
+      const wrap=document.createElement('span'); wrap.className='scene-wrap';
+      const del=document.createElement('button'); del.type='button'; del.className='scene-del';
+      del.textContent='×'; del.title='Delete scene “'+sc.name+'”'; del._del=sc.name;
+      wrap.appendChild(b); wrap.appendChild(del); host.appendChild(wrap);
+    } else host.appendChild(b);
+  }
+  refreshToggles(prgBytes);                       // set active highlights for the (re)built buttons
+}
+function deleteScene(name){
+  if(!window.confirm('Delete saved scene “'+name+'”?')) return;   // confirm before removing
+  saveUserScenes(loadUserScenes().filter(u=>u.name!==name)); renderScenes();
+  status('deleted scene · <span class="hot">'+name+'</span>');
+}
+$('sceneBtns').addEventListener('click', e=>{
+  const del=e.target.closest('.scene-del'); if(del){ deleteScene(del._del); return; }
+  const b=e.target.closest('.ctl'); if(!b) return;
+  if(b._user && (e.altKey||e.metaKey)){ deleteScene(b._name); return; }   // Alt-click still deletes
+  const on=sceneActive(b);                        // already active (bytes+speed+warp) -> toggle back to original
+  const bytes=Uint8Array.from(ORIG);
+  if(!on) for(const [off,val] of b._pairs) bytes[off]=val;
+  hexEl.value=toDump(bytes); loadPRG(bytes);
+  applySceneState(on?'rt':b._speed, on?false:b._warp);   // restore the scene's speed/warp (or reset on toggle-off)
+});
+$('saveScene').addEventListener('click', ()=>{
+  const s=changeString(), speed=$('speed').value, warp=warpAudio;   // capture bytes + speed + warp
+  if(!s && speed==='rt' && !warp){ status('nothing to save — pick a mode, nudge a knob, or change the speed',true); return; }
+  const name=(window.prompt('Name this scene','')||'').trim();
+  if(!name) return;
+  const arr=loadUserScenes().filter(u=>u.name!==name); arr.push({name,str:s,speed,warp}); saveUserScenes(arr);
+  renderScenes();
+  status('saved scene · <span class="hot">'+name+'</span>');
+});
+renderScenes();
+
+// ---- live knobs: continuous single-byte parameters poked straight into the running machine ----
+// Each knob writes prgBytes[off] (so it persists through a restart / shows in the hex dump) and,
+// while the emulator is live, also pokes the zero-page cell it runs from (cell = off-1) so the
+// change is heard on the very next frame without a restart.
+const knobEls=[];
+function pokeByte(off,val){ val&=0xff; prgBytes[off]=val; if(m) m.ram[(off-1)&0xffff]=val; }
+function syncKnobs(bytes){ for(const k of knobEls) if(k.off<bytes.length) k.setUI(bytes[k.off]); }
+function makeKnob(parent, off, name, hint){
+  const cell=document.createElement('div'); cell.className='knob'; if(hint) cell.title=hint;
+  cell.innerHTML=`<div class="knob-top"><span class="knob-name">${name}</span><span class="knob-off">$${hx2(off)}</span></div>`+
+                 `<input type="range" min="0" max="255" class="knob-range" aria-label="${name}">`+
+                 `<input type="text" maxlength="2" class="knob-hex" spellcheck="false" aria-label="${name} hex">`;
+  const range=cell.querySelector('.knob-range'), hex=cell.querySelector('.knob-hex');
+  const setUI=v=>{ range.value=v; hex.value=hx2(v); };
+  const note=v=>status('$'+hx2(off)+' = <span class="hot">'+hx2(v)+'</span>  ·  '+name);
+  const commit=()=>{ hexEl.value=toDump(prgBytes); refreshToggles(prgBytes); };   // reflect into the raw editor
+  range.addEventListener('input', ()=>{ const v=+range.value; pokeByte(off,v); hex.value=hx2(v); note(v); });
+  range.addEventListener('change', commit);
+  hex.addEventListener('input', ()=>{ const v=parseInt(hex.value,16); if(!isNaN(v)){ pokeByte(off,v); range.value=v&0xff; note(v&0xff); } });
+  hex.addEventListener('change', ()=>{ let v=parseInt(hex.value,16); if(isNaN(v))v=prgBytes[off]; v&=0xff; pokeByte(off,v); setUI(v); commit(); });
+  knobEls.push({off,setUI});
+  parent.appendChild(cell);
+}
+[ // rhythm — timing masks (all are immediate operands of and/cmp instructions)
+  [0x8d,'Melody rate','$8d · and #$0f — lower = faster 16th-note steps'],
+  [0x59,'Beat duck',  '$59 · and #$30 — which beat-quarter ducks the kick gate'],
+  [0x67,'Bass hold',  '$67 · cmp #$10 — how long the bass note holds each beat'],
+].forEach(([o,n,h])=>makeKnob($('knobRhythm'),o,n,h));
+[ // voices — seed / pitch / timbre
+  [0x91,'Melody seed','$91 · lda #$b8 — the melody-LFSR seed; reshapes the whole tune'],
+  [0x1a,'Drone pitch','$1a · voice-3 frequency msb'],
+  [0x1c,'Drone tone', '$1c · voice-3 pulse-width msb (brightness)'],
+].forEach(([o,n,h])=>makeKnob($('knobVoice'),o,n,h));
+for(let i=0;i<4;i++) makeKnob($('knobBass'),0xf4+i,'note '+i,'basstbl['+i+'] — voice-1 frequency, indexed by bar & 3');
+for(let i=0;i<8;i++) makeKnob($('knobMel'), 0xf8+i,'note '+i,'freqtbl['+i+'] — voice-2 melody pitch, indexed by LFSR & 7');
+syncKnobs(prgBytes);
+
+// reset just the live-knob bytes back to the official values — live, without restarting the song
+$('resetknobs').addEventListener('click', ()=>{
+  for(const k of knobEls){ pokeByte(k.off, ORIG[k.off]); k.setUI(ORIG[k.off]); }
+  hexEl.value=toDump(prgBytes); refreshToggles(prgBytes);
+  kstat('knobs reset to original');
+});
+
+// ---- copy/paste scoped to the knob section only (independent of the preset bytes) ----
+const KNOB_OFFS=knobEls.map(k=>k.off), KNOB_SET=new Set(KNOB_OFFS);
+function kstat(msg,err){ const e=$('kstatus'); e.innerHTML=msg; e.classList.toggle('err',!!err); }
+function knobChangeString(){
+  const out=[];
+  for(const off of KNOB_OFFS) if(prgBytes[off]!==ORIG[off]) out.push(hx2(off)+'='+hx2(prgBytes[off]));
+  return out.join(',');
+}
+function applyKnobString(s){
+  s=s.trim().replace(/^amib\d*:/i,'');
+  const pairs=[];
+  for(const tok of s.split(/[\s,;]+/)){
+    if(!tok) continue;
+    const mm=tok.match(/^(?:\$|0x)?([0-9a-f]{1,2})\s*[=:]\s*(?:\$|0x)?([0-9a-f]{1,2})$/i);
+    if(!mm) throw new Error('bad pair "'+tok+'"');
+    pairs.push([parseInt(mm[1],16)&0xff, parseInt(mm[2],16)&0xff]);
+  }
+  for(const off of KNOB_OFFS) pokeByte(off, ORIG[off]);     // reset knob bytes, then apply — all live
+  let set=0, skip=0;
+  for(const [off,val] of pairs){ if(KNOB_SET.has(off)){ pokeByte(off,val); set++; } else skip++; }
+  syncKnobs(prgBytes); hexEl.value=toDump(prgBytes); refreshToggles(prgBytes);
+  kstat('knobs loaded · <span class="hot">'+set+'</span> set'+(skip?' · '+skip+' non-knob ignored':''));
+}
+$('copykstr').addEventListener('click', async ()=>{
+  const s=knobChangeString();
+  $('kstr').value=s;
+  if(!s){ kstat('no knob changes to copy'); return; }
+  let ok=false;
+  try{ await navigator.clipboard.writeText(s); ok=true; }
+  catch(e){ const t=$('kstr'); t.select(); try{ ok=document.execCommand('copy'); }catch(_){} }
+  kstat(ok ? 'copied · <span class="hot">'+s+'</span>' : 'copy blocked — select the box and copy manually');
+});
+function loadKnobStr(){ try{ applyKnobString($('kstr').value); }catch(e){ kstat(e.message,true); } }
+$('loadkstr').addEventListener('click', loadKnobStr);
+$('kstr').addEventListener('keydown', e=>{ if(e.key==='Enter') loadKnobStr(); });
+
+// ---- shareable "change string": a compact list of every byte that differs from the release ----
+function changeString(){
+  const out=[];
+  for(let i=0;i<prgBytes.length;i++) if(prgBytes[i]!==ORIG[i]) out.push(hx2(i)+'='+hx2(prgBytes[i]));
+  return out.join(',');
+}
+function parseChangeString(s){          // returns ORIG with the listed offset=value pairs applied
+  const bytes=Uint8Array.from(ORIG);
+  s=s.trim().replace(/^amib\d*:/i,'');
+  if(!s) return bytes;
+  for(const tok of s.split(/[\s,;]+/)){
+    if(!tok) continue;
+    const mm=tok.match(/^(?:\$|0x)?([0-9a-f]{1,2})\s*[=:]\s*(?:\$|0x)?([0-9a-f]{1,2})$/i);
+    if(!mm) throw new Error('bad pair "'+tok+'"');
+    bytes[parseInt(mm[1],16)&0xff]=parseInt(mm[2],16)&0xff;
+  }
+  return bytes;
+}
+$('copystr').addEventListener('click', async ()=>{
+  const s=changeString();
+  $('pstr').value=s;                    // also surface it in the box so it's visible / re-copyable
+  if(!s){ status('nothing changed — already the original'); return; }
+  let ok=false;
+  try{ await navigator.clipboard.writeText(s); ok=true; }
+  catch(e){ const t=$('pstr'); t.select(); try{ ok=document.execCommand('copy'); }catch(_){} }
+  status(ok ? 'copied · <span class="hot">'+s+'</span>' : 'copy blocked — select the box and copy manually');
+});
+function loadStr(){
+  let bytes; try{ bytes=parseChangeString($('pstr').value); }catch(e){ status(e.message,true); return; }
+  hexEl.value=toDump(bytes);
+  loadPRG(bytes);                       // syncs hex dump, toggles and knobs from the new bytes
+}
+$('loadstr').addEventListener('click', loadStr);
+$('pstr').addEventListener('keydown', e=>{ if(e.key==='Enter') loadStr(); });
+
+// ---- section transport: jump between the demo's 8-bar sections ----
+// Progress is the bar counter clock_msb ($20). Because the demo self-modifies as the bar climbs,
+// we can't just poke $20 — we replay the machine at top speed until it reaches the target bar,
+// which reproduces the exact code/colour/sound state of a real playthrough.
+const barSeekEl=$('barSeek'), barNowEl=$('barNow');
+// the song runs until clock_msb reaches the `cpx #$3f` value at $41, so the last bar = prgBytes[$41]
+let sectionMax=0x3f;
+function updateSectionMax(){
+  sectionMax=Math.max(1, prgBytes[0x41]);
+  barSeekEl.max=sectionMax;
+  if(+barSeekEl.value>sectionMax) barSeekEl.value=sectionMax;
+  barNowEl.textContent=(m?m.ram[0x20]:+barSeekEl.value)+'/'+sectionMax;
+}
+function resetDerived(){            // clear everything derived from playback (heat, trace, audio, scopes)
+  everHit.fill(0); for(const el of litLines) el._k=undefined;
+  traceLines.length=0; curPC=-1;
+  if(curLineEl){ curLineEl.classList.remove('cur'); curLineEl=null; }
+  scopeW=0;
+  for(const b of scopeBufs) b.fill(0); for(const p of scopePhase) p.fill(0);
+}
+function seekToBar(target){
+  target=Math.max(0,Math.min(sectionMax,target|0));
+  if(!m){ boot(); }                                       // first use: spin up the machine
+  if(m.ram[0x20] > target){ m.prg=prgBytes; m.init(); resetDerived(); }  // can't rewind -> restart, then ff
+  let guard=0; while(m.ram[0x20] < target && guard++<300000) m.runFrame();
+  flushAudio();                                          // drop stale queued audio, re-prime at the new bar
+  if(paused) setPaused(false);
+}
+const curBar=()=> m ? m.ram[0x20] : 0;
+$('secRestart').addEventListener('click', ()=>seekToBar(0));
+$('secPrev').addEventListener('click', ()=>seekToBar(((curBar()>>3)-1)<<3));
+$('secNext').addEventListener('click', ()=>seekToBar(((curBar()>>3)+1)<<3));
+$('skipIntro').addEventListener('click', ()=>seekToBar(0x10));
+barSeekEl.addEventListener('input', ()=>{ barNowEl.textContent=barSeekEl.value+'/'+sectionMax; });   // preview while dragging
+barSeekEl.addEventListener('change', ()=>seekToBar(+barSeekEl.value));
+updateSectionMax();                  // seed the slider range from the initial bytes
 
 // ---- fullscreen the video frame only (canvas + its black letterbox, nothing else) ----
 const fsBtn=$('fs'), fsTraceBody=$('fsTraceBody');
@@ -281,6 +835,18 @@ function onFsChange(){ const on=fsEl()===screenFrame;
   fsBtn.setAttribute('aria-label', fsBtn.title); }
 document.addEventListener('fullscreenchange', onFsChange);
 document.addEventListener('webkitfullscreenchange', onFsChange);
+
+// "Show in fullscreen" toggle (persisted) — controls whether the .fs-trace overlay appears in fullscreen
+const fsTraceChk=$('fsTraceChk');
+let hideFsTrace = localStorage.getItem('amib_hidefstrace')==='1';
+fsTraceChk.checked = !hideFsTrace;
+function applyFsTrace(){ screenFrame.classList.toggle('no-fs-trace', hideFsTrace); }
+applyFsTrace();
+fsTraceChk.addEventListener('change', ()=>{
+  hideFsTrace = !fsTraceChk.checked;
+  localStorage.setItem('amib_hidefstrace', hideFsTrace?'1':'0');
+  applyFsTrace();
+});
 
 // ---- 60 fps render of video + grid + trace + scope ----
 const PAL=[]; // built from C64.PALETTE indirectly via screen render; grid uses its own colours
@@ -305,7 +871,10 @@ function draw(){
   $('rA').textContent=hx2(c.a); $('rX').textContent=hx2(c.x); $('rY').textContent=hx2(c.y);
   $('rS').textContent=hx2(c.s); $('rPC').textContent=hx4(c.pc);
   $('rF').textContent=['N','V','-','B','D','I','Z','C'].map((f,i)=>(c.p&(0x80>>i))?f:'·').join('');
-  $('bar').textContent=m.ram[0x20];
+  const bar=m.ram[0x20];
+  $('bar').textContent=bar;
+  if(document.activeElement!==barSeekEl) barSeekEl.value=bar;   // don't fight an active drag
+  barNowEl.textContent=bar+'/'+sectionMax;
 }
 
 function drawGrid(){
