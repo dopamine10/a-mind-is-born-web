@@ -283,7 +283,7 @@ for(const s of scopeDefs){ s.ctx=s.cv.getContext('2d'); s.w=s.cv.width; s.h=s.cv
 
 let actx=null,node=null,gain=null,m=null, rd=null;
 let sampleRate=44100, samplesPerFrame=735, realtime=true, paused=false, speedIps=0, stepAccum=0;
-let ring=new Float32Array(1<<16), rHead=0, rTail=0, frameBuf=null, voiceBufs=null, phaseFrame=null;
+let frameBuf=null, voiceBufs=null, phaseFrame=null, targetSamples=8192;
 const SCOPE_N=4096, SCOPE_MASK=SCOPE_N-1, SCOPE_SPAN=620;   // ring length, mask, samples drawn per trace (fewer cycles -> roomier, steadier)
 const scopeBufs=[0,1,2].map(()=>new Float32Array(SCOPE_N)); let scopeW=0;   // the 3 voices
 // per-voice oscillator phase (0..1), parallel to scopeBufs, for phase-locked triggering
@@ -309,14 +309,44 @@ let curLineEl=null;
 })();
 function scrollSrcTo(el){ srcEl.scrollTop = el.offsetTop - srcEl.clientHeight/2 + el.offsetHeight/2; }
 
-const ringLen=()=>(rHead-rTail+ring.length)%ring.length;
-function push(mix,vb,ph,n){ for(let i=0;i<n;i++){
-  ring[rHead]=mix[i]; rHead=(rHead+1)%ring.length;   // audio output (mix still plays)
-  scopeBufs[0][scopeW]=vb[0][i]; scopeBufs[1][scopeW]=vb[1][i]; scopeBufs[2][scopeW]=vb[2][i];
-  scopePhase[0][scopeW]=ph[0][i]; scopePhase[1][scopeW]=ph[1][i]; scopePhase[2][scopeW]=ph[2][i];
-  scopeW=(scopeW+1)&(SCOPE_N-1);
-} }
-function ensure(n){ let g=0; while(ringLen()<n && g++<512){ m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,samplesPerFrame,phaseFrame); push(frameBuf,voiceBufs,phaseFrame,samplesPerFrame); } }
+// ---- audio output is an AudioWorklet "sink": it only plays from a queue we keep filled a little
+// ---- ahead of playback. The heavy work (6502 emulation + SID synthesis) stays on the main thread,
+// ---- exactly as before, so emulation is byte-for-byte unchanged — but the audio thread never has
+// ---- to compute under deadline, and the lead buffer rides out main-thread/render jitter that used
+// ---- to underrun the old ScriptProcessor and crackle.
+const WORKLET_SRC=`
+class AmibSink extends AudioWorkletProcessor{
+  constructor(){ super(); this.q=[]; this.qLen=0; this.cur=null; this.pos=0; this.target=8192; this.low=4096; this.req=false;
+    this.port.onmessage=(e)=>{ const d=e.data;
+      if(d.type==='samples'){ this.q.push(d.buf); this.qLen+=d.buf.length; this.req=false; }
+      else if(d.type==='config'){ this.target=d.target; this.low=d.low; }
+      else if(d.type==='flush'){ this.q.length=0; this.qLen=0; this.cur=null; this.pos=0; this.req=false; } }; }
+  process(_in,outs){ const out=outs[0][0]; if(!out) return true; const n=out.length;
+    for(let i=0;i<n;i++){
+      if(!this.cur||this.pos>=this.cur.length){ this.cur=this.q.shift()||null; this.pos=0; if(!this.cur){ while(i<n) out[i++]=0; break; } }
+      out[i]=this.cur[this.pos++]; this.qLen--; }
+    if(!this.req && this.qLen<this.low){ this.req=true; this.port.postMessage({type:'need',amount:this.target-this.qLen}); }
+    return true; } }
+registerProcessor('amib-sink',AmibSink);`;
+const TARGET_LEAD_S=0.10;   // keep ~100 ms of audio queued ahead of playback; raise if any crackle remains
+// run the emulator forward to make ~`amount` samples, ship them to the sink, and feed the scopes
+function produce(amount){
+  if(!node || !realtime || paused) return;
+  const spf=samplesPerFrame, frames=Math.max(1,Math.ceil(amount/spf)), buf=new Float32Array(frames*spf);
+  let off=0;
+  for(let f=0;f<frames;f++){
+    m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,spf,phaseFrame);
+    buf.set(frameBuf.subarray(0,spf),off); off+=spf;
+    for(let i=0;i<spf;i++){   // same scope/phase capture the old push() did
+      scopeBufs[0][scopeW]=voiceBufs[0][i]; scopeBufs[1][scopeW]=voiceBufs[1][i]; scopeBufs[2][scopeW]=voiceBufs[2][i];
+      scopePhase[0][scopeW]=phaseFrame[0][i]; scopePhase[1][scopeW]=phaseFrame[1][i]; scopePhase[2][scopeW]=phaseFrame[2][i];
+      scopeW=(scopeW+1)&(SCOPE_N-1);
+    }
+  }
+  node.port.postMessage({type:'samples',buf},[buf.buffer]);   // transfer (zero-copy)
+}
+// drop queued audio and re-prime from the current emulator position (restart / seek / resume)
+function flushAudio(){ if(node){ node.port.postMessage({type:'flush'}); produce(targetSamples); } }
 
 // ---- emulator stepping for slow modes (mirrors C64.stepOne but captures disasm pre-exec) ----
 function zpCell(a){ if(a>=0&&a<=0xff) return a; if(a>=0x800&&a<=0x8ff) return a&0xff; return -1; }
@@ -337,23 +367,24 @@ function doStep(){
 }
 
 // ---- audio / boot ----
-function boot(){
+async function boot(){
   actx=new (window.AudioContext||window.webkitAudioContext)();
   sampleRate=actx.sampleRate; samplesPerFrame=Math.round(sampleRate/60);
   frameBuf=new Float32Array(samplesPerFrame);
   voiceBufs=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
   phaseFrame=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
-  m=new C64(prgBytes,sampleRate); rd=m.rd.bind(m);
-  const BUF=1024;
-  node=actx.createScriptProcessor(BUF,0,1);
-  node.onaudioprocess=(e)=>{
-    const out=e.outputBuffer.getChannelData(0);
-    if(!realtime || paused){ out.fill(0); return; }
-    ensure(BUF);
-    for(let i=0;i<BUF;i++){ if(ringLen()>0){ out[i]=ring[rTail]; rTail=(rTail+1)%ring.length; } else out[i]=0; }
-  };
-  gain=actx.createGain(); gain.gain.value=$('vol').value/100;
-  node.connect(gain).connect(actx.destination);
+  m=new C64(prgBytes,sampleRate); rd=m.rd.bind(m);   // emulator stays on the main thread, unchanged
+  targetSamples=Math.max(samplesPerFrame*2, Math.round(sampleRate*TARGET_LEAD_S));
+  try{
+    const url=URL.createObjectURL(new Blob([WORKLET_SRC],{type:'text/javascript'}));
+    await actx.audioWorklet.addModule(url); URL.revokeObjectURL(url);
+    node=new AudioWorkletNode(actx,'amib-sink',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[1]});
+    node.port.onmessage=(e)=>{ if(e.data.type==='need') produce(e.data.amount); };   // sink pulls when its queue runs low
+    node.port.postMessage({type:'config',target:targetSamples,low:Math.round(targetSamples*0.5)});
+    gain=actx.createGain(); gain.gain.value=$('vol').value/100;
+    node.connect(gain).connect(actx.destination);
+    produce(targetSamples);   // prime the queue so playback starts already filled
+  }catch(err){ console.error('AudioWorklet init failed:', err); }
 }
 
 // click the video (standard view or fullscreen) to start it, then to toggle pause/play
@@ -363,6 +394,7 @@ function setPaused(p){
   overlay.classList.toggle('hidden', !p);              // overlay (▶) doubles as the paused indicator
   if(p && overlayMsg) overlayMsg.textContent='paused · click to resume';
   if(actx){ p ? actx.suspend() : actx.resume(); }      // also silences / restores real-time audio
+  if(!p && realtime) flushAudio();                     // re-prime the sink cleanly on resume
 }
 screenFrame.addEventListener('click', ()=>{
   if(!m){ boot(); setPaused(false); }   // first click: boot + play
@@ -370,8 +402,8 @@ screenFrame.addEventListener('click', ()=>{
 });
 $('vol').addEventListener('input', ()=>{ if(gain) gain.gain.value=$('vol').value/100; });
 function applySpeed(v){
-  if(v==='rt'){ realtime=true; rHead=rTail=0; if(actx && !paused) actx.resume(); }
-  else { realtime=false; speedIps=+v; stepAccum=0; }
+  if(v==='rt'){ realtime=true; if(actx && !paused) actx.resume(); flushAudio(); }
+  else { realtime=false; speedIps=+v; stepAccum=0; if(node) node.port.postMessage({type:'flush'}); }   // slow modes -> silence the sink
 }
 $('speed').addEventListener('change', e=>applySpeed(e.target.value));
 applySpeed($('speed').value);   // sync state to whatever the browser restored (avoids a silent rt/slow mismatch on reload)
@@ -670,7 +702,7 @@ function resetDerived(){            // clear everything derived from playback (h
   everHit.fill(0); for(const el of litLines) el._k=undefined;
   traceLines.length=0; curPC=-1;
   if(curLineEl){ curLineEl.classList.remove('cur'); curLineEl=null; }
-  rHead=rTail=0; scopeW=0;
+  scopeW=0;
   for(const b of scopeBufs) b.fill(0); for(const p of scopePhase) p.fill(0);
 }
 function seekToBar(target){
@@ -678,7 +710,7 @@ function seekToBar(target){
   if(!m){ boot(); }                                       // first use: spin up the machine
   if(m.ram[0x20] > target){ m.prg=prgBytes; m.init(); resetDerived(); }  // can't rewind -> restart, then ff
   let guard=0; while(m.ram[0x20] < target && guard++<300000) m.runFrame();
-  rHead=rTail=0;                                          // drop stale buffered audio
+  flushAudio();                                          // drop stale queued audio, re-prime at the new bar
   if(paused) setPaused(false);
 }
 const curBar=()=> m ? m.ram[0x20] : 0;
