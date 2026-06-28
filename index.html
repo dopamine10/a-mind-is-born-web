@@ -147,13 +147,15 @@
   .knob-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
   .knob-cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
   @media(max-width:560px){ .knob-cols{ grid-template-columns:1fr; } }
-  .byte-row{ display:grid; grid-template-columns:repeat(auto-fill,minmax(70px,1fr)); gap:8px; }
+  .byte-row{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }  /* note knobs: 3 per line, wide (like Rhythm) */
   .knob-tables{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
   @media(max-width:560px){ .knob-tables{ grid-template-columns:1fr; } }
   .knob{ background:#0b0b12; border:1px solid #1d1d28; border-radius:6px; padding:8px 9px; }
   .knob-top{ display:flex; justify-content:space-between; align-items:baseline; gap:6px; margin-bottom:6px; }
   .knob-name{ color:var(--fg); font-size:11.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .knob-off{ color:#4f4f5e; font-size:10px; flex:none; }
+  .knob-restart{ border-color:#3a3120; }
+  .knob-rs{ color:var(--hot); font-size:10px; cursor:help; }
   .knob input[type=range]{ width:100%; margin:0 0 6px; accent-color:var(--accent); display:block; }
   .knob-hex{ width:100%; background:#08080d; color:#9fb0c8; border:1px solid #23232f; border-radius:4px;
              font:11.5px ui-monospace,Consolas,monospace; padding:3px 6px; text-align:center; text-transform:uppercase; }
@@ -208,9 +210,10 @@
       </div>
       <div class="sidbar">
         <label class="sid-lbl">SID chip
-          <select id="sidModel" aria-label="SID emulation core" autocomplete="off" title="Which SID synthesis to use. 6581/8580 use Hermit's more authentic model (changes the sound — and the ENV3-driven visuals).">
+          <select id="sidModel" aria-label="SID emulation core" autocomplete="off" title="Which SID synthesis to use. 6581/8580 use Hermit's model (changes the sound — and the ENV3-driven visuals). 'Hermit - Full Saw' un-folds the 6581 pulse+saw combined wave, so the drone isn't collapsed to a quiet stub by Hermit's index-fold.">
             <option value="approx">original (approx)</option>
             <option value="6581">6581 (Hermit)</option>
+            <option value="6581a">Hermit - Full Saw</option>
             <option value="8580">8580 (Hermit)</option>
           </select>
         </label>
@@ -296,7 +299,7 @@
 
 <script type="module">
 import { PRG } from './prg.js';
-import { C64 } from './c64.js';
+import { C64, INTERNAL_RATE } from './c64.js';
 import { disasm, hx2, hx4 } from './disasm.js';
 import { SRC } from './source.js';
 
@@ -316,9 +319,9 @@ const scopeDefs=[   // amp = target fill: each trace auto-fits to this fraction 
 for(const s of scopeDefs){ s.ctx=s.cv.getContext('2d'); s.w=s.cv.width; s.h=s.cv.height; }
 
 let actx=null,node=null,gain=null,m=null, rd=null;
-let sampleRate=44100, samplesPerFrame=735, realtime=true, paused=false, speedIps=0, stepAccum=0;
+let sampleRate=44100, samplesPerFrame=735, realtime=true, paused=false, speedIps=0, stepAccum=0;   // sampleRate=device out rate; samplesPerFrame=735 emu frame @ INTERNAL_RATE
 let warpAudio=false, warpRate=1;   // warp = play pitch-shifted (varispeed) audio in the non-real-time speeds
-let sidKind='approx';              // which SID synthesis core: 'approx' | '6581' | '8580'
+let sidKind='approx';              // which SID synthesis core: 'approx' | '6581' | '6581a' | '8580'
 let frameBuf=null, voiceBufs=null, phaseFrame=null, targetSamples=8192;
 const SCOPE_N=4096, SCOPE_MASK=SCOPE_N-1, SCOPE_SPAN=620;   // ring length, mask, samples drawn per trace (fewer cycles -> roomier, steadier)
 const scopeBufs=[0,1,2].map(()=>new Float32Array(SCOPE_N)); let scopeW=0;   // the 3 voices
@@ -367,45 +370,40 @@ registerProcessor('amib-sink',AmibSink);`;
 const TARGET_LEAD_S=0.10;   // keep ~100 ms of audio queued ahead of playback; raise if any crackle remains
 const WARP_RT_IPS=300000;   // ~instructions/sec at real-time, for mapping the speed dropdown to a warp factor
 const clampWarp=x=>Math.min(4, Math.max(0.05, x));   // keep the resample sane: cap fast, floor slow
-let warpMix=null, warpV=null, warpP=null;
-function ensureWarp(n){ if(!warpMix||warpMix.length<n){ warpMix=new Float32Array(n); warpV=[0,1,2].map(()=>new Float32Array(n)); warpP=[0,1,2].map(()=>new Float32Array(n)); } }
+// INTERNAL_RATE (imported from c64.js): the SID runs at this fixed rate and produce() resamples to the
+// device's AudioContext rate, so the sound AND the scope traces are identical on every browser/device.
+// Running the SID directly at the device rate drifts its cutoff / resonance / level (muffled at 96-192 kHz,
+// overdriven at 44.1 kHz) and changed the scope traces per browser; pinning fixes both. See boot()/produce().
+let warpMix=null;   // scratch buffer holding one produce() call's emu-rate mix, before resampling to device rate
+function ensureWarp(n){ if(!warpMix||warpMix.length<n) warpMix=new Float32Array(n); }
 // run the emulator forward to make ~`amount` output samples, ship them to the sink, and feed the scopes.
 // At warpRate=1 this is plain real-time; otherwise it generates the emulator's audio and resamples it to
 // real-time by warpRate (a varispeed / turntable pitch+tempo shift). Emulation itself is unchanged.
 function produce(amount){
   if(!node || !realtime || paused) return;
   const spf=samplesPerFrame;
-  if(warpRate===1){
-    const frames=Math.max(1,Math.ceil(amount/spf)), buf=new Float32Array(frames*spf);
-    let off=0;
-    for(let f=0;f<frames;f++){
-      m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,spf,phaseFrame);
-      buf.set(frameBuf.subarray(0,spf),off); off+=spf;
-      for(let i=0;i<spf;i++){   // same scope/phase capture the old push() did
-        scopeBufs[0][scopeW]=voiceBufs[0][i]; scopeBufs[1][scopeW]=voiceBufs[1][i]; scopeBufs[2][scopeW]=voiceBufs[2][i];
-        scopePhase[0][scopeW]=phaseFrame[0][i]; scopePhase[1][scopeW]=phaseFrame[1][i]; scopePhase[2][scopeW]=phaseFrame[2][i];
-        scopeW=(scopeW+1)&(SCOPE_N-1);
-      }
-    }
-    node.port.postMessage({type:'samples',buf},[buf.buffer]);
-    return;
-  }
-  // varispeed: generate whole frames of emulator audio, then resample emu -> output by warpRate (pitch+tempo)
-  const frames=Math.max(1, Math.ceil(Math.ceil(amount*warpRate)/spf)), emu=frames*spf;
+  // emu (internal-rate) samples consumed per OUTPUT sample = rate conversion (internal->device) * warp factor.
+  // At a 44.1 kHz device with warpRate=1 this is 1.0 (pass-through); at 192 kHz it upsamples; warp shifts pitch.
+  const step=(INTERNAL_RATE/sampleRate)*warpRate;
+  const frames=Math.max(1, Math.ceil((amount*step+2)/spf)), emu=frames*spf;
   ensureWarp(emu);
   for(let f=0;f<frames;f++){
     m.runFrame(); m.renderAudioSplit(frameBuf,voiceBufs,spf,phaseFrame);
     const base=f*spf;
     warpMix.set(frameBuf.subarray(0,spf),base);
-    for(let v=0;v<3;v++){ warpV[v].set(voiceBufs[v].subarray(0,spf),base); warpP[v].set(phaseFrame[v].subarray(0,spf),base); }
+    for(let i=0;i<spf;i++){   // scopes are fed at the INTERNAL rate, so traces look identical on every device
+      scopeBufs[0][scopeW]=voiceBufs[0][i]; scopeBufs[1][scopeW]=voiceBufs[1][i]; scopeBufs[2][scopeW]=voiceBufs[2][i];
+      scopePhase[0][scopeW]=phaseFrame[0][i]; scopePhase[1][scopeW]=phaseFrame[1][i]; scopePhase[2][scopeW]=phaseFrame[2][i];
+      scopeW=(scopeW+1)&(SCOPE_N-1);
+    }
   }
-  const outN=Math.max(1, Math.round(emu/warpRate)), out=new Float32Array(outN), ratio=emu/outN;
+  // resample the audible mix from the fixed internal rate to the device rate (and warp), linear interpolation.
+  // (step>1 — fast warp, or a rare sub-44.1 kHz device — downsamples without an anti-alias filter; the usual
+  //  case here is upsampling or 1:1 pass-through, which is alias-free.)
+  const outN=Math.max(1, Math.round(emu/step)), out=new Float32Array(outN);
   for(let i=0;i<outN;i++){
-    const x=i*ratio, x0=x|0, fr=x-x0, x1=x0+1<emu?x0+1:emu-1;
-    out[i]=warpMix[x0]*(1-fr)+warpMix[x1]*fr;   // linear interpolation
-    scopeBufs[0][scopeW]=warpV[0][x0]; scopeBufs[1][scopeW]=warpV[1][x0]; scopeBufs[2][scopeW]=warpV[2][x0];
-    scopePhase[0][scopeW]=warpP[0][x0]; scopePhase[1][scopeW]=warpP[1][x0]; scopePhase[2][scopeW]=warpP[2][x0];
-    scopeW=(scopeW+1)&(SCOPE_N-1);
+    const x=i*step, x0=x|0, fr=x-x0, x1=x0+1<emu?x0+1:emu-1;
+    out[i]=warpMix[x0]*(1-fr)+warpMix[x1]*fr;
   }
   node.port.postMessage({type:'samples',buf:out},[out.buffer]);
 }
@@ -433,11 +431,12 @@ function doStep(){
 // ---- audio / boot ----
 async function boot(){
   actx=new (window.AudioContext||window.webkitAudioContext)();
-  sampleRate=actx.sampleRate; samplesPerFrame=Math.round(sampleRate/60);
+  sampleRate=actx.sampleRate;                          // the device's output rate (varies by browser/device)
+  samplesPerFrame=Math.round(INTERNAL_RATE/60);        // emulator frame size at the FIXED internal rate (735)
   frameBuf=new Float32Array(samplesPerFrame);
   voiceBufs=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
   phaseFrame=[0,1,2].map(()=>new Float32Array(samplesPerFrame));
-  m=new C64(prgBytes,sampleRate); rd=m.rd.bind(m);   // emulator stays on the main thread, unchanged
+  m=new C64(prgBytes,INTERNAL_RATE); rd=m.rd.bind(m);  // SID runs at calibrated 44.1 kHz; produce() resamples to device rate
   m.useSid(sidKind);                                 // apply the chosen SID core
   targetSamples=Math.max(samplesPerFrame*2, Math.round(sampleRate*TARGET_LEAD_S));
   try{
@@ -500,9 +499,9 @@ warpChk.addEventListener('change', ()=>{
   applySpeed($('speed').value); refreshToggles(prgBytes);   // re-apply speed + refresh scene highlights
 });
 applySpeed($('speed').value);   // sync state to whatever the browser restored (avoids a silent rt/slow mismatch on reload)
-// SID core selector (original approx / Hermit 6581 / Hermit 8580), persisted
+// SID core selector (original approx / Hermit 6581 / full-saw 6581 / Hermit 8580), persisted
 const sidModelEl=$('sidModel');
-sidKind = localStorage.getItem('amib_sid'); if(['approx','6581','8580'].indexOf(sidKind)<0) sidKind='approx';
+sidKind = localStorage.getItem('amib_sid'); if(['approx','6581','6581a','8580'].indexOf(sidKind)<0) sidKind='approx';
 sidModelEl.value=sidKind;
 sidModelEl.addEventListener('change', ()=>{
   sidKind=sidModelEl.value; localStorage.setItem('amib_sid', sidKind);
@@ -698,19 +697,32 @@ renderScenes();
 const knobEls=[];
 function pokeByte(off,val){ val&=0xff; prgBytes[off]=val; if(m) m.ram[(off-1)&0xffff]=val; }
 function syncKnobs(bytes){ for(const k of knobEls) if(k.off<bytes.length) k.setUI(bytes[k.off]); }
-function makeKnob(parent, off, name, hint){
-  const cell=document.createElement('div'); cell.className='knob'; if(hint) cell.title=hint;
-  cell.innerHTML=`<div class="knob-top"><span class="knob-name">${name}</span><span class="knob-off">$${hx2(off)}</span></div>`+
+// `restart` knobs feed something stateful (e.g. the melody LFSR), so a live poke would diverge
+// non-deterministically from the current state. Those stage the value while dragging and cold-restart
+// on release, so the result is reproducible.
+function makeKnob(parent, off, name, hint, restart){
+  const cell=document.createElement('div'); cell.className='knob'+(restart?' knob-restart':'');
+  cell.title=(restart?'↻ changing this restarts the demo (so the result is deterministic)\n':'')+(hint||'');
+  cell.innerHTML=`<div class="knob-top"><span class="knob-name">${name}${restart?' <span class="knob-rs" title="restarts on change">↻</span>':''}</span><span class="knob-off">$${hx2(off)}</span></div>`+
                  `<input type="range" min="0" max="255" class="knob-range" aria-label="${name}">`+
                  `<input type="text" maxlength="2" class="knob-hex" spellcheck="false" aria-label="${name} hex">`;
   const range=cell.querySelector('.knob-range'), hex=cell.querySelector('.knob-hex');
   const setUI=v=>{ range.value=v; hex.value=hx2(v); };
-  const note=v=>status('$'+hx2(off)+' = <span class="hot">'+hx2(v)+'</span>  ·  '+name);
-  const commit=()=>{ hexEl.value=toDump(prgBytes); refreshToggles(prgBytes); };   // reflect into the raw editor
-  range.addEventListener('input', ()=>{ const v=+range.value; pokeByte(off,v); hex.value=hx2(v); note(v); });
-  range.addEventListener('change', commit);
-  hex.addEventListener('input', ()=>{ const v=parseInt(hex.value,16); if(!isNaN(v)){ pokeByte(off,v); range.value=v&0xff; note(v&0xff); } });
-  hex.addEventListener('change', ()=>{ let v=parseInt(hex.value,16); if(isNaN(v))v=prgBytes[off]; v&=0xff; pokeByte(off,v); setUI(v); commit(); });
+  const note=v=>status('$'+hx2(off)+' = <span class="hot">'+hx2(v)+'</span>  ·  '+name+(restart?' · release to restart':''));
+  if(restart){
+    const stage=v=>{ v&=0xff; prgBytes[off]=v; hex.value=hx2(v); note(v); };   // update the byte + UI, no live poke
+    const fire=()=>{ hexEl.value=toDump(prgBytes); loadPRG(prgBytes); };       // sync the raw dump, then cold-restart
+    range.addEventListener('input', ()=>stage(+range.value));
+    range.addEventListener('change', ()=>{ stage(+range.value); fire(); });   // cold-restart on release
+    hex.addEventListener('input', ()=>{ const v=parseInt(hex.value,16); if(!isNaN(v)){ prgBytes[off]=v&0xff; range.value=v&0xff; note(v&0xff); } });
+    hex.addEventListener('change', ()=>{ let v=parseInt(hex.value,16); if(isNaN(v))v=prgBytes[off]; v&=0xff; prgBytes[off]=v; setUI(v); fire(); });
+  } else {
+    const commit=()=>{ hexEl.value=toDump(prgBytes); refreshToggles(prgBytes); };   // reflect into the raw editor
+    range.addEventListener('input', ()=>{ const v=+range.value; pokeByte(off,v); hex.value=hx2(v); note(v); });
+    range.addEventListener('change', commit);
+    hex.addEventListener('input', ()=>{ const v=parseInt(hex.value,16); if(!isNaN(v)){ pokeByte(off,v); range.value=v&0xff; note(v&0xff); } });
+    hex.addEventListener('change', ()=>{ let v=parseInt(hex.value,16); if(isNaN(v))v=prgBytes[off]; v&=0xff; pokeByte(off,v); setUI(v); commit(); });
+  }
   knobEls.push({off,setUI});
   parent.appendChild(cell);
 }
@@ -719,11 +731,11 @@ function makeKnob(parent, off, name, hint){
   [0x59,'Beat duck',  '$59 · and #$30 — which beat-quarter ducks the kick gate'],
   [0x67,'Bass hold',  '$67 · cmp #$10 — how long the bass note holds each beat'],
 ].forEach(([o,n,h])=>makeKnob($('knobRhythm'),o,n,h));
-[ // voices — seed / pitch / timbre
-  [0x91,'Melody seed','$91 · lda #$b8 — the melody-LFSR seed; reshapes the whole tune'],
+[ // voices — seed / pitch / timbre  (the seed feeds an LFSR -> restart so it's deterministic)
+  [0x91,'Melody seed','$91 · lda #$b8 — the melody-LFSR seed; reshapes the whole tune', true],
   [0x1a,'Drone pitch','$1a · voice-3 frequency msb'],
   [0x1c,'Drone tone', '$1c · voice-3 pulse-width msb (brightness)'],
-].forEach(([o,n,h])=>makeKnob($('knobVoice'),o,n,h));
+].forEach(([o,n,h,r])=>makeKnob($('knobVoice'),o,n,h,r));
 for(let i=0;i<4;i++) makeKnob($('knobBass'),0xf4+i,'note '+i,'basstbl['+i+'] — voice-1 frequency, indexed by bar & 3');
 for(let i=0;i<8;i++) makeKnob($('knobMel'), 0xf8+i,'note '+i,'freqtbl['+i+'] — voice-2 melody pitch, indexed by LFSR & 7');
 syncKnobs(prgBytes);

@@ -11,9 +11,15 @@
 
 const PAL_CLOCK = 985248;
 
-// --- combined-waveform tables: generated algorithmically (Hermit's method), model-independent;
-// the 6581 variant just masks the table index (its combined waveforms are "halved" 8580-like). ---
+// --- combined-waveform tables: generated algorithmically (Hermit's method). Hermit's 6581 just masks
+// the table index (its combined waveforms become "halved" 8580-like) — faithful to his code, but for
+// pulse+saw it reads the saw at the *wrong* (low) phase exactly when the pulse gates it through, so a
+// high-duty voice like this demo's drone collapses to a DC-pinned ~1/3-amplitude stub. The real 6581's
+// pulse+saw is weaker and grittier than the 8580's, but a *proper* waveform. PulseSaw_6581 below models
+// that with the SAME algorithm at dirtier coupling (stronger neighbour bleed + higher MOSFET threshold);
+// the optional '6581a' core (combFix) uses it INSTEAD of the fold. See README "Fidelity". ---
 const TriSaw = new Float64Array(4096), PulseSaw = new Float64Array(4096), PulseTriSaw = new Float64Array(4096);
+const PulseSaw_6581 = new Float64Array(4096);   // 6581 pulse+saw rendered WITHOUT the index-fold (full-saw core)
 function createCombinedWF(arr, bitmul, bitstrength, treshold){
   for(let i=0;i<4096;i++){
     let v=0;
@@ -28,6 +34,10 @@ function createCombinedWF(arr, bitmul, bitstrength, treshold){
 createCombinedWF(TriSaw, 0.8, 2.4, 0.64);
 createCombinedWF(PulseSaw, 1.4, 1.9, 0.68);
 createCombinedWF(PulseTriSaw, 0.8, 2.5, 0.64);
+// 6581: bitstrength 1.9->1.6 (more neighbour coupling = dirtier) and treshold 0.68->0.72 (weaker).
+// For this demo's drone it reads the table's high extreme, so it lands ~full strength (validated);
+// the dirtier params carry the 6581's grittier character across other pulse+saw content.
+createCombinedWF(PulseSaw_6581, 1.4, 1.6, 0.72);
 
 // envelope rate-counter exp prescaler table (256 entries), verbatim from jsSID
 const ADSR_exptable = new Uint16Array([1,30,30,30,30,30,30,16,16,16,16,16,16,16,16,8,8,8,8,8,8,8,8,8,8,8,8,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]);
@@ -41,6 +51,7 @@ export class SIDHermit {
     this.sampleRate = sampleRate;
     this.reg = new Uint8Array(0x20);
     this.model = 6581;                 // 6581 (default, the classic sound) or 8580
+    this.combFix = false;              // '6581a' full-saw core: use the un-folded pulse+saw table, not the index-fold
     this.clk = PAL_CLOCK / sampleRate;
     // Hermit's cutoff curve is tuned for ~44.1 kHz; we evaluate it at this reference rate and re-map
     // the result to the device's actual rate (this.srRatio) so the filter sounds the same everywhere.
@@ -60,12 +71,19 @@ export class SIDHermit {
     this.prevwfout=[0,0,0]; this.prevwavdata=[0,0,0];
     this.srcMSBrise=0; this.srcMSB=0;
     this.prevlp=0; this.prevbp=0;
-    this.osc3=0; this.env3=0;
+    this._osc3=0; this._env3=0;        // voice-3 waveform/envelope read-back ($d41b/$d41c); methods below
     this._v=[0,0,0]; this._p=[0,0,0];   // per-voice scope taps (signal, phase)
   }
+  // `model` drives both the cutoff and resonance curves, so any change must invalidate their cache.
+  // (Today useSid() builds a fresh instance per chip, but this keeps an in-place model swap correct too.)
+  get model(){ return this._model; }
+  set model(v){ this._model=v; this._cutCo=-1; this._cutR=-1; }
   write(r,val){ this.reg[r&0x1f]=val&0xff; }
-  read(r){ r&=0x1f; if(r===0x1b) return this.osc3&0xff; if(r===0x1c) return this.env3&0xff; return this.reg[r]; }
-  env3_8(){ return this.env3&0xff; } osc3_8(){ return this.osc3&0xff; }
+  read(r){ r&=0x1f; if(r===0x1b) return this._osc3&0xff; if(r===0x1c) return this._env3&0xff; return this.reg[r]; }
+  // env3()/osc3() mirror sid.js's accessor names so both SID cores share one duck-typed interface
+  // (read(0x1c)/read(0x1b) works on both too). env3_8()/osc3_8() are kept for existing callers.
+  env3(){ return this._env3&0xff; } osc3(){ return this._osc3&0xff; }
+  env3_8(){ return this._env3&0xff; } osc3_8(){ return this._osc3&0xff; }
 
   // one output sample; mirrors jsSID's SID() for a single chip (num=0, base regs at $00)
   step(){
@@ -146,8 +164,10 @@ export class SIDHermit {
       if(m[0x17] & (1<<ch)) filtin += (wfout-0x8000)*(this.envcnt[ch]/256);
       else if(ch!==2 || !(m[0x18]&OFF3)) output += (wfout-0x8000)*(this.envcnt[ch]/256);
     }
-    // OSC3 / ENV3 read-back from voice 3 (the demo reads $d41c=ENV3 to drive its visuals)
-    this.osc3=wfout>>8; this.env3=this.envcnt[2];
+    // OSC3 / ENV3 read-back from voice 3 (the demo reads $d41c=ENV3 to drive its visuals). NOTE: the
+    // '6581a' core changes OSC3 ($d41b, the waveform byte) for a pulse+saw voice but NOT ENV3 ($d41c,
+    // the envelope) — so this demo's ENV3-driven visuals are identical; a program sampling $d41b would differ.
+    this._osc3=wfout>>8; this._env3=this.envcnt[2];
     // two-integrator state-variable filter, per-model cutoff/resonance curves
     // cutoff/resonance change at most once per bar, so cache them (and the per-sample trig)
     const co=(m[0x15]&7)/8 + m[0x16] + 0.2;
@@ -177,11 +197,19 @@ export class SIDHermit {
     t=this.prevlp + t*cutoff; this.prevlp=t;
     if(m[0x18]&LP) output+=t;
     if(!Number.isFinite(this.prevlp)||!Number.isFinite(this.prevbp)){ this.prevlp=0; this.prevbp=0; }   // never let the filter die permanently
-    // 1.5x makeup so loudness roughly matches the 'approx' core (peaks stay well under 1.0)
+    // Makeup gain. 'approx' (sid.js, tanh*0.6) is the loudness REFERENCE; 1.5x matches the Hermit cores'
+    // RMS to it (~0.34, measured across bars 0-63 / multiple LFSR loops). The fuller 6581a/8580 reach
+    // internal sample peaks >1.0 on the loudest bars (8580 ~1.24), but that's BEFORE the master volume:
+    // at the default 62% the 8580 output peaks ~0.77, so it only actually clips the DAC above ~81% volume.
     return (output/(0x10000*3*16)) * (m[0x18]&0xF) * 1.5;
   }
   _comb(ch, arr, index, differ6581){
-    if(differ6581 && this.model===6581) index&=0x7FF;
+    if(differ6581 && this.model===6581){
+      // full-saw 6581: read the un-folded pulse+saw table at the true phase; otherwise Hermit's coarse fold.
+      // (saw+tri / pulse+saw+tri keep the fold — those genuinely ARE near-useless on a real 6581.)
+      if(this.combFix && arr===PulseSaw) arr=PulseSaw_6581;
+      else index&=0x7FF;
+    }
     const w=(arr[index]+this.prevwavdata[ch])/2; this.prevwavdata[ch]=arr[index]; return w;
   }
   generate(buf,n){ for(let i=0;i<n;i++) buf[i]=this.step(); }

@@ -61,7 +61,7 @@ Click ▶ to start (browsers require a gesture before audio).
 |------|------|
 | [`cpu.js`](cpu.js) | MOS 6510/6502 core — full legal set **plus** the undocumented opcodes the demo needs |
 | [`sid.js`](sid.js) | 6581 SID — 3 voices (tri/saw/pulse/noise + ADSR), resonant filter, OSC3/ENV3 read-back |
-| [`sid-hermit.js`](sid-hermit.js) | optional, more authentic **6581 / 8580** SID — ported from Hermit's jsSID (WTFPL) |
+| [`sid-hermit.js`](sid-hermit.js) | optional, more detailed **6581 / 8580** SID — ported from Hermit's jsSID (WTFPL) |
 | [`c64.js`](c64.js) | memory map, VIC-II extended-colour text rendering, 60 Hz IRQ, KERNAL traps |
 | [`disasm.js`](disasm.js) | 6502 disassembler (incl. illegals) for the live trace |
 | [`prg.js`](prg.js) | the exact 256 bytes, embedded |
@@ -75,12 +75,31 @@ Smoke test: `node test.mjs`.
 - **The SID is a faithful approximation, not [reSID](https://en.wikipedia.org/wiki/ReSID).** The
   melody, bass, drums and drone are all there and recognizable, and the filter is modelled, but a
   real 6581's exact analog filter curve and combined-waveform quirks are not fully reproduced.
-- **Selectable SID core (UI).** Besides the built-in approximation you can switch to a more authentic
+- **Selectable SID core (UI).** Besides the built-in approximation you can switch to a more detailed
   **6581** or **8580** model ([`sid-hermit.js`](sid-hermit.js)) — ported from Hermit's jsSID, with
   *algorithmic* combined waveforms and per-model filter curves. It's pure JS (no blob) and uses no
   GPL data, so it gets noticeably closer to a real chip without reSID's licensing. (reSID's exact
   chip-sampled tables would be note-perfect but are GPL — intentionally not used here.) Note the
   6581/8580 cores also change the **ENV3-driven visuals**, since the picture reads voice 3's envelope.
+- **Full-saw 6581 core (`Hermit - Full Saw`).** Hermit's faithful 6581 renders *combined* waveforms by
+  index-folding the 8580 table (his own description: "halved 8580-like waves"). That's fine for saw+tri
+  and pulse+saw+tri — which genuinely *are* near-useless on a real 6581 — but for **pulse+saw** it reads
+  the saw at the wrong (low) phase exactly when the pulse gates it through, so a high-duty voice like
+  this demo's **drone** collapses to a quiet, DC-pinned stub (~⅓ amplitude). The demo was authored on real
+  6581 hardware where that drone is plainly audible, so the collapse is a *model artifact*, not the chip.
+  The `Hermit - Full Saw` core renders pulse+saw with the **same `createCombinedWF` algorithm without the
+  fold** (a dedicated 6581-tuned table), **restoring the drone to full strength**. It is **not** claimed to
+  be "more authentic" than the plain core: at the *top* of the sawtooth — where this high-duty drone spends
+  most of its time — combined waveforms converge across chip revisions (most DAC bits set, little left to
+  "mix"), so the restored drone's **timbre** is close to the 8580's; the 6581 character comes from the
+  chip's **darker filter**, which this core keeps. The plain `6581 (Hermit)` core is left bit-for-bit faithful.
+- **Sample-rate independent.** The SID is emulated at a fixed internal **44.1 kHz** — the rate Hermit's
+  filter curves and the built-in core were calibrated at — and the result is resampled to whatever your
+  browser's AudioContext reports (often 48 kHz, sometimes the device's 96/192 kHz). Running the SID
+  *directly* at the device rate drifts its filter cutoff, resonance and output level, so the identical demo
+  came out **muffled at high rates and overdriven at 44.1 kHz**, and even the on-screen scope traces
+  differed between browsers. Pinning the internal rate makes the sound *and* the scopes identical and
+  correct on every device.
 
 ## Credits & licensing
 
