@@ -2,9 +2,16 @@
 // We don't ship ROMs; the handful of KERNAL entry points the demo calls are trapped in JS.
 import { CPU } from './cpu.js';
 import { SID } from './sid.js';
+import { SIDHermit } from './sid-hermit.js';
 
 const PAL_CLOCK = 985248;
 const IRQ_PERIOD = 16421;           // KERNAL CIA Timer-A reload -> ~60 Hz tick
+
+// The SID model + filter curves (and the approx core) are calibrated at this rate. The app runs the
+// emulator here REGARDLESS of the audio device and resamples to the device rate (see index.html produce()),
+// so the sound and the scope traces are identical on every browser/device. Exported as the single source
+// of truth so index.html and test.mjs don't repeat the literal 44100 and can't drift apart.
+const INTERNAL_RATE = 44100;
 
 // C64 16-colour PAL palette (RGB), VICE "Pepto" values.
 export const PALETTE = [
@@ -21,6 +28,7 @@ export class C64 {
     this.color = new Uint8Array(0x400);   // color RAM $d800 (low nibble)
     this.cia1 = new Uint8Array(0x10);
     this.sid = new SID(sampleRate);
+    this.sidKind = 'approx';
     this.prg = prg;
     this.cpu = new CPU(this.rd.bind(this), this.wr.bind(this));
     this.sampleRate = sampleRate;
@@ -33,6 +41,24 @@ export class C64 {
     this.traceN = 64; this.traceAddr = new Uint16Array(this.traceN);
     this.traceKind = new Uint8Array(this.traceN); this.traceW = 0;
     this.init();
+  }
+
+  // Swap the SID synthesis core: 'approx' (built-in hand SID), '6581'/'8580' (Hermit's model), or
+  // '6581a' (6581 "full saw" — un-folds the pulse+saw combined wave instead of Hermit's index-fold, which
+  // otherwise collapses this demo's drone).
+  // Carries the current register settings over so playback continues from the same chip state.
+  useSid(kind){
+    if(kind===this.sidKind) return;
+    const old=this.sid;
+    let next;
+    if(kind==='6581' || kind==='8580' || kind==='6581a'){
+      next=new SIDHermit(this.sampleRate);
+      next.model = kind==='8580'?8580:6581;
+      next.combFix = (kind==='6581a');   // full-saw 6581: un-folded pulse+saw (restores the drone) — see sid-hermit.js
+    }
+    else { next=new SID(this.sampleRate); kind='approx'; }
+    if(old){ for(let r=0;r<=0x18;r++) next.write(r, old.read(r)); }   // copy voice/filter registers
+    this.sid=next; this.sidKind=kind;
   }
 
   init(){
@@ -187,4 +213,4 @@ export class C64 {
   }
 }
 
-export { IRQ_PERIOD, PAL_CLOCK };
+export { IRQ_PERIOD, PAL_CLOCK, INTERNAL_RATE };

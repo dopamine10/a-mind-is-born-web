@@ -157,7 +157,8 @@ export class SID {
     }
     this._vout[0]=v0/OS; this._vout[1]=v1/OS; this._vout[2]=v2/OS;  // per-voice scope (filtered if routed)
     let out=(mix/OS)*(this.vol/15);
-    // soft clip (tanh) for analog-ish warmth instead of harsh digital clipping
+    // soft clip (tanh) for analog-ish warmth instead of harsh digital clipping.
+    // This 'approx' core is the LOUDNESS REFERENCE — the Hermit cores are calibrated to match it.
     return Math.tanh(out*0.42)*0.6;
   }
   generate(buf, n){
